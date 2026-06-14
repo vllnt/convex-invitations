@@ -47,13 +47,6 @@ indexed for token redemption (`by_token`), pending-per-resource listing
 retention sweep (`by_state_created`). No host tables are touched. A built-in cron
 (`crons.ts`) sweeps daily.
 
-**Composition (minimal stage).** This component models the invite — including its
-token — self-contained. It composes the *semantics* of two other vllnt primitives
-but does not yet depend on them: a later version would delegate the hashed/revocable
-token to `@vllnt/convex-tokens` and write the granted membership via
-`@vllnt/convex-memberships`, with `accept` orchestrating the two. Today `accept`
-returns the grant for the host to apply.
-
 ## Installation
 
 ```bash
@@ -147,8 +140,7 @@ surface (an org's open-invite list) is an ordinary reactive `useQuery` over the
 host's own re-exported `getByToken` / `listPending` function refs (those return live
 in Convex), so a dedicated hook would add a wrapper with no value over the host's
 existing `api`. The token is delivered by the host, not revealed in a client
-component. If a future consumer needs a shared management surface the analysis will
-be re-run (per the Component Standard's front-end tooling decision).
+component.
 
 ## Security Model
 
@@ -164,8 +156,7 @@ link) can never double-grant. **TTL is enforced on read** — accepting a
 past-`expiresAt` invite is rejected even before the cron sweeps it. **Time is
 server-sourced** — `createdAt`/`acceptedAt`/`revokedAt` come from `Date.now()` inside
 each handler, never from the caller. The token is the bearer secret: the host gates
-who may read it and delivers it out of band; at this minimal stage it is stored as-is
-(a later version hashes it via `@vllnt/convex-tokens`). The host may narrow the opaque
+who may read it and delivers it out of band; it is stored as-is. The host may narrow the opaque
 `role`/`payload` with `roleValidator` / `payloadValidator`, applied at the client
 boundary on both write and read.
 
