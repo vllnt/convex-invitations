@@ -117,12 +117,11 @@ partition.
 
 | Changed | Update in the same commit |
 |---------|--------------------------|
-| Public API (issue/accept/revoke/peek/getByToken/listPending/listByResourceState/prune signatures) | README API Reference table, `docs/API.md`, `llms.txt` context, regenerate `llms-full.txt` |
+| Public API (issue/accept/revoke/peek/getByToken/listPending/listByResourceState/prune signatures) | README API Reference table, `docs/API.md`, `llms.txt` context |
 | Config options / defaults (validators, TTL, retention, generateToken, batch) | README API Reference, `docs/API.md` constructor section |
 | Schema / table / indexes | README Architecture, `docs/API.md` |
 | Error codes | `docs/API.md` → `## Error codes` table |
 | `peerDependencies.convex` version | `llms.txt` context line (`convex@^X.Y.Z`), `docs/API.md` Compatibility line, README Installation peer note |
 | Lifecycle / state machine | `docs/API.md` mutation sections, Key design decisions above |
-| Any change | `pnpm generate:llms` to keep `llms-full.txt` current |
 
 Grep old values before committing (e.g. after a `peerDependencies.convex` bump, `git grep "1.41.0"` → only the new range survives).
