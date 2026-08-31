@@ -109,7 +109,7 @@ export const accept = mutation({
       });
     }
 
-    await ctx.db.patch(invite._id, {
+    await ctx.db.patch("invitations", invite._id, {
       state: "accepted",
       acceptedAt: now,
       acceptedBy: args.acceptedBy,
@@ -153,7 +153,7 @@ export const revoke = mutation({
         message: `invitation is already ${invite.state} and cannot be revoked`,
       });
     }
-    await ctx.db.patch(invite._id, { state: "revoked", revokedAt: Date.now() });
+    await ctx.db.patch("invitations", invite._id, { state: "revoked", revokedAt: Date.now() });
     return null;
   },
 });
@@ -177,7 +177,7 @@ export const peek = mutation({
       return null;
     }
     if (invite.state === "pending" && invite.expiresAt <= Date.now()) {
-      await ctx.db.patch(invite._id, { state: "expired" });
+      await ctx.db.patch("invitations", invite._id, { state: "expired" });
       return { ...view(invite), state: "expired" as const };
     }
     return view(invite);
@@ -244,7 +244,7 @@ export const prune = mutation({
             .take(args.batch - accepted.length - revoked.length)
         : [];
     for (const row of [...accepted, ...revoked, ...expired]) {
-      await ctx.db.delete(row._id);
+      await ctx.db.delete("invitations", row._id);
     }
     const removed = accepted.length + revoked.length + expired.length;
 
@@ -260,7 +260,7 @@ export const prune = mutation({
             .take(remaining)
         : [];
     for (const row of stale) {
-      await ctx.db.patch(row._id, { state: "expired" });
+      await ctx.db.patch("invitations", row._id, { state: "expired" });
     }
 
     const touched = removed + stale.length;
