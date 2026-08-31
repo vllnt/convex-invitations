@@ -24,6 +24,13 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
     mutations: {
+      accept: FunctionReference<
+        "mutation",
+        "internal",
+        { acceptedBy: string; token: string },
+        { payload?: any; resourceRef: string; role?: any },
+        Name
+      >;
       issue: FunctionReference<
         "mutation",
         "internal",
@@ -37,20 +44,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           token: string;
         },
         { expiresAt: number; token: string },
-        Name
-      >;
-      accept: FunctionReference<
-        "mutation",
-        "internal",
-        { acceptedBy: string; token: string },
-        { payload?: any; resourceRef: string; role?: any },
-        Name
-      >;
-      revoke: FunctionReference<
-        "mutation",
-        "internal",
-        { token: string },
-        null,
         Name
       >;
       peek: FunctionReference<
@@ -80,6 +73,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         number,
         Name
       >;
+      revoke: FunctionReference<
+        "mutation",
+        "internal",
+        { token: string },
+        null,
+        Name
+      >;
     };
     queries: {
       getByToken: FunctionReference<
@@ -102,7 +102,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         },
         Name
       >;
-      listPending: FunctionReference<
+      listByResourceState: FunctionReference<
         "query",
         "internal",
         {
@@ -115,6 +115,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             numItems: number;
           };
           resourceRef: string;
+          state: "pending" | "accepted" | "revoked" | "expired";
         },
         {
           continueCursor: string;
@@ -138,7 +139,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         },
         Name
       >;
-      listByResourceState: FunctionReference<
+      listPending: FunctionReference<
         "query",
         "internal",
         {
@@ -151,7 +152,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             numItems: number;
           };
           resourceRef: string;
-          state: "pending" | "accepted" | "revoked" | "expired";
         },
         {
           continueCursor: string;
