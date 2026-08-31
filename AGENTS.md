@@ -14,7 +14,12 @@ The invite → accept → expire flow, as a Convex component. A host mutation is
 expiring invitation to an opaque resource and gets back a token to hand to the invitee out of band;
 the invitee redeems it with `accept` (single-use, returns the grant the host applies); a still-open
 invite can be revoked, and an unaccepted invite expires when its TTL elapses. It follows the vllnt
-Component Standard (see the `convex-components` hub `.claude/rules/component-standard.md`).
+Component Standard (see the `oss-packages` hub `AGENTS.md`).
+
+## Agent instructions
+
+`AGENTS.md` is the sole agent-instruction source for this repository. Do not add
+`CLAUDE.md` or `.claude` content.
 
 ## Architecture
 
@@ -126,3 +131,9 @@ partition.
 | Any change | `pnpm generate:llms` to keep `llms-full.txt` current |
 
 Grep old values before committing (e.g. after a `peerDependencies.convex` bump, `git grep "1.41.0"` → only the new range survives).
+
+## Generated code
+
+- Every `**/_generated/**` file is owned exclusively by Convex CLI codegen.
+- Never create, edit, lint, or format generated files manually.
+- Run `pnpm codegen` to regenerate them and commit the generated output unchanged.
