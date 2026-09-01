@@ -44,7 +44,9 @@ storage; `inviterRef`/`inviteeRef` are opaque host subjects (omit `inviteeRef` f
 open link). `createdAt` is stamped from the server clock.
 
 The token must be unique — a collision throws
-`ConvexError({ code: "DUPLICATE_TOKEN" })`.
+`ConvexError({ code: "DUPLICATE_TOKEN" })`. New invitations return the raw bearer token once and
+persist/index only its SHA-256 digest. The bounded migration below removes raw tokens from
+pre-upgrade rows.
 
 ### `accept(ctx, token, acceptedBy) → InvitationGrant`
 
@@ -79,10 +81,16 @@ invite found past its `expiresAt` is flipped to `expired` and returned as such. 
 as a mutation because it may write that one transition. Returns `null` for a missing
 token. Use `getByToken` for a pure reactive read.
 
+### `migrateLegacyTokens(ctx, batch?) → number`
+
+Hash and remove raw bearer tokens from up to 50 pre-upgrade rows by default (maximum 100). A full
+batch self-reschedules, and the built-in daily cron drives the migration automatically. Direct
+lookup, accept, revoke, and duplicate detection remain compatible while migration is in progress.
+
 ### `prune(ctx, opts?) → number`
 
 `opts`: `{ before?: number; retentionBefore?: number; batch?: number }` (defaults:
-`before = retentionBefore = Date.now()`, `batch = 200`).
+`before = Date.now()`, `retentionBefore = Date.now() - 30 days`, `batch = 200`).
 
 Two bounded passes, oldest first: first delete up to `batch` **terminal** invites
 whose `createdAt < retentionBefore` (the retention sweep, across
@@ -106,19 +114,20 @@ clock, or call `peek` when you need read-time TTL enforcement. `InvitationView` 
 expiresAt, acceptedAt?, acceptedBy?, revokedAt? }`; `role`/`payload` are narrowed by
 the host validators when set.
 
-### `listPending(ctx, resourceRef, paginationOpts) → PaginationResult<InvitationView>`
+### `listPending(ctx, resourceRef, paginationOpts) → PaginationResult<InvitationMetadata>`
 
 Page the still-`pending` invitations for one `resourceRef`, oldest first via the
 `by_resource_state` index. Takes the standard Convex `paginationOpts` and returns the
-standard paginated envelope (`page`, `isDone`, `continueCursor`). Past-TTL invites may
+standard paginated envelope (`page`, `isDone`, `continueCursor`) with metadata only and no
+bearer token. Past-TTL invites may
 still appear `pending` here until a `peek`/`accept`/cron sweep flips them; compare
 `expiresAt` against the clock to hide stale ones in the host UI.
 
-### `listByResourceState(ctx, resourceRef, state, paginationOpts) → PaginationResult<InvitationView>`
+### `listByResourceState(ctx, resourceRef, state, paginationOpts) → PaginationResult<InvitationMetadata>`
 
 Page invitations for one `resourceRef` in a given `state` (`"pending" | "accepted" |
 "revoked" | "expired"`), oldest first — for an accepted/revoked/expired audit surface.
-Same envelope as `listPending`.
+Same metadata-only envelope as `listPending`; bearer tokens are excluded.
 
 ## Error codes
 
@@ -133,10 +142,11 @@ Coded `ConvexError`s thrown by the component (`error.data.code`):
 
 ## Cron / Maintenance
 
-The component registers one cron (`crons.ts`):
+The component registers two crons (`crons.ts`):
 
 | Job | Cadence | Action |
 |-----|---------|--------|
+| `invitations:migrate-legacy-tokens` | every 24h (`PRUNE_INTERVAL`) | hashes and removes raw tokens from up to 50 pre-upgrade rows, self-rescheduling until migration is complete |
 | `invitations:prune` | every 24h (`PRUNE_INTERVAL`) | runs `prune` with `batch = PRUNE_BATCH` (200) — expires stale pending invites and deletes terminal invites past retention, self-rescheduling until the tail is clean |
 
 Cadence is a static module constant (Convex cron definitions are static per

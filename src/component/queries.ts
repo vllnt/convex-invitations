@@ -1,13 +1,31 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query } from "./_generated/server";
-import { invitationState, invitationView } from "./validators";
+import { withLegacyTokenFallback } from "./legacyToken";
+import { tokenDigest, validateToken } from "./token";
+import { invitationMetadataView, invitationState, invitationView } from "./validators";
 import type { Doc } from "./_generated/dataModel";
 
 /** Project a stored invitation row to its public view (drops internal fields). */
-function view(invite: Doc<"invitations">) {
+function metadataView(invite: Doc<"invitations">) {
   return {
-    token: invite.token,
+    resourceRef: invite.resourceRef,
+    role: invite.role,
+    inviterRef: invite.inviterRef,
+    inviteeRef: invite.inviteeRef,
+    payload: invite.payload,
+    state: invite.state,
+    createdAt: invite.createdAt,
+    expiresAt: invite.expiresAt,
+    acceptedAt: invite.acceptedAt,
+    acceptedBy: invite.acceptedBy,
+    revokedAt: invite.revokedAt,
+  };
+}
+
+function view(invite: Doc<"invitations">, token: string) {
+  return {
+    token,
     resourceRef: invite.resourceRef,
     role: invite.role,
     inviterRef: invite.inviterRef,
@@ -33,11 +51,14 @@ export const getByToken = query({
   args: { token: v.string() },
   returns: v.union(v.null(), invitationView),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    return invite === null ? null : view(invite);
+    const invite = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    return invite === null ? null : view(invite, args.token);
   },
 });
 
@@ -52,7 +73,7 @@ export const getByToken = query({
 export const listPending = query({
   args: { resourceRef: v.string(), paginationOpts: paginationOptsValidator },
   returns: v.object({
-    page: v.array(invitationView),
+    page: v.array(invitationMetadataView),
     isDone: v.boolean(),
     continueCursor: v.string(),
     splitCursor: v.optional(v.union(v.string(), v.null())),
@@ -72,7 +93,7 @@ export const listPending = query({
       )
       .order("asc")
       .paginate(args.paginationOpts);
-    return { ...result, page: result.page.map(view) };
+    return { ...result, page: result.page.map(metadataView) };
   },
 });
 
@@ -88,7 +109,7 @@ export const listByResourceState = query({
     paginationOpts: paginationOptsValidator,
   },
   returns: v.object({
-    page: v.array(invitationView),
+    page: v.array(invitationMetadataView),
     isDone: v.boolean(),
     continueCursor: v.string(),
     splitCursor: v.optional(v.union(v.string(), v.null())),
@@ -108,6 +129,6 @@ export const listByResourceState = query({
       )
       .order("asc")
       .paginate(args.paginationOpts);
-    return { ...result, page: result.page.map(view) };
+    return { ...result, page: result.page.map(metadataView) };
   },
 });

@@ -41,6 +41,12 @@ export interface InvitationView<TRole = unknown, TPayload = unknown> {
   revokedAt?: number;
 }
 
+/** Metadata-safe list projection that never exposes the bearer token. */
+export type InvitationMetadata<TRole = unknown, TPayload = unknown> = Omit<
+  InvitationView<TRole, TPayload>,
+  "token"
+>;
+
 /**
  * The grant {@link Invitations.accept} returns — what the host applies (writes a
  * membership, grants a role) once an invite is consumed. `role`/`payload` are

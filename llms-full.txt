@@ -159,6 +159,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Breaking
+
+- Pending/history list pages now return token-free `InvitationMetadata` projections. Consumers that
+  previously read `page[].token` must retain the one-time `issue()` result for delivery and use
+  `peek(token)` / `getByToken(token)` for direct token lookup.
+
+### Fixed
+
+- Apply the documented 30-day default retention window to terminal invitations instead of
+  deleting them on the next daily sweep.
+- Reject invalid prune batch sizes to prevent infinite self-scheduling and oversized transactions.
+- Store only SHA-256 invitation-token digests and remove bearer tokens from pending/history list
+  projections; raw tokens are returned only when issued and accepted only for direct lookup.
+- Migrate pre-upgrade raw bearer tokens opportunistically on mutation and through a bounded daily
+  backfill while preserving direct lookup and duplicate detection during the transition.
+
+### Changed
+
+- Treat Convex `_generated` output as CLI-owned, exclude it from formatting, and expose a
+  dedicated codegen script.
+- Refresh all direct dependencies to their latest compatible releases for canary validation.
+- Require `convex@^1.45.0` and update `convex-test` to `^0.0.56`.
+
 ## [0.1.0] - 2026-06-14
 
 ### Added
@@ -248,7 +271,9 @@ storage; `inviterRef`/`inviteeRef` are opaque host subjects (omit `inviteeRef` f
 open link). `createdAt` is stamped from the server clock.
 
 The token must be unique — a collision throws
-`ConvexError({ code: "DUPLICATE_TOKEN" })`.
+`ConvexError({ code: "DUPLICATE_TOKEN" })`. New invitations return the raw bearer token once and
+persist/index only its SHA-256 digest. The bounded migration below removes raw tokens from
+pre-upgrade rows.
 
 ### `accept(ctx, token, acceptedBy) → InvitationGrant`
 
@@ -283,10 +308,16 @@ invite found past its `expiresAt` is flipped to `expired` and returned as such. 
 as a mutation because it may write that one transition. Returns `null` for a missing
 token. Use `getByToken` for a pure reactive read.
 
+### `migrateLegacyTokens(ctx, batch?) → number`
+
+Hash and remove raw bearer tokens from up to 50 pre-upgrade rows by default (maximum 100). A full
+batch self-reschedules, and the built-in daily cron drives the migration automatically. Direct
+lookup, accept, revoke, and duplicate detection remain compatible while migration is in progress.
+
 ### `prune(ctx, opts?) → number`
 
 `opts`: `{ before?: number; retentionBefore?: number; batch?: number }` (defaults:
-`before = retentionBefore = Date.now()`, `batch = 200`).
+`before = Date.now()`, `retentionBefore = Date.now() - 30 days`, `batch = 200`).
 
 Two bounded passes, oldest first: first delete up to `batch` **terminal** invites
 whose `createdAt < retentionBefore` (the retention sweep, across
@@ -310,19 +341,20 @@ clock, or call `peek` when you need read-time TTL enforcement. `InvitationView` 
 expiresAt, acceptedAt?, acceptedBy?, revokedAt? }`; `role`/`payload` are narrowed by
 the host validators when set.
 
-### `listPending(ctx, resourceRef, paginationOpts) → PaginationResult<InvitationView>`
+### `listPending(ctx, resourceRef, paginationOpts) → PaginationResult<InvitationMetadata>`
 
 Page the still-`pending` invitations for one `resourceRef`, oldest first via the
 `by_resource_state` index. Takes the standard Convex `paginationOpts` and returns the
-standard paginated envelope (`page`, `isDone`, `continueCursor`). Past-TTL invites may
+standard paginated envelope (`page`, `isDone`, `continueCursor`) with metadata only and no
+bearer token. Past-TTL invites may
 still appear `pending` here until a `peek`/`accept`/cron sweep flips them; compare
 `expiresAt` against the clock to hide stale ones in the host UI.
 
-### `listByResourceState(ctx, resourceRef, state, paginationOpts) → PaginationResult<InvitationView>`
+### `listByResourceState(ctx, resourceRef, state, paginationOpts) → PaginationResult<InvitationMetadata>`
 
 Page invitations for one `resourceRef` in a given `state` (`"pending" | "accepted" |
 "revoked" | "expired"`), oldest first — for an accepted/revoked/expired audit surface.
-Same envelope as `listPending`.
+Same metadata-only envelope as `listPending`; bearer tokens are excluded.
 
 ## Error codes
 
@@ -337,10 +369,11 @@ Coded `ConvexError`s thrown by the component (`error.data.code`):
 
 ## Cron / Maintenance
 
-The component registers one cron (`crons.ts`):
+The component registers two crons (`crons.ts`):
 
 | Job | Cadence | Action |
 |-----|---------|--------|
+| `invitations:migrate-legacy-tokens` | every 24h (`PRUNE_INTERVAL`) | hashes and removes raw tokens from up to 50 pre-upgrade rows, self-rescheduling until migration is complete |
 | `invitations:prune` | every 24h (`PRUNE_INTERVAL`) | runs `prune` with `batch = PRUNE_BATCH` (200) — expires stale pending invites and deletes terminal invites past retention, self-rescheduling until the tail is clean |
 
 Cadence is a static module constant (Convex cron definitions are static per
@@ -454,6 +487,12 @@ export interface InvitationView<TRole = unknown, TPayload = unknown> {
   revokedAt?: number;
 }
 
+/** Metadata-safe list projection that never exposes the bearer token. */
+export type InvitationMetadata<TRole = unknown, TPayload = unknown> = Omit<
+  InvitationView<TRole, TPayload>,
+  "token"
+>;
+
 /**
  * The grant {@link Invitations.accept} returns — what the host applies (writes a
  * membership, grants a role) once an invite is consumed. `role`/`payload` are
@@ -526,6 +565,7 @@ import type {
 } from "convex/server";
 import type {
   InvitationGrant,
+  InvitationMetadata,
   InvitationState,
   InvitationView,
   InvitationsOptions,
@@ -539,8 +579,7 @@ import { DEFAULT_PRUNE_BATCH, DEFAULT_TTL_MS } from "../shared.js";
  * data. `role` and `payload` are `unknown` here; the {@link Invitations} client
  * runs the host validators over them at its typed boundary.
  */
-type RawView = {
-  token: string;
+type RawMetadata = {
   resourceRef: string;
   role?: unknown;
   inviterRef?: string;
@@ -553,6 +592,8 @@ type RawView = {
   acceptedBy?: string;
   revokedAt?: number;
 };
+
+type RawView = RawMetadata & { token: string };
 
 /** The component's raw accept grant, before the client narrows opaque host data. */
 type RawGrant = { resourceRef: string; role?: unknown; payload?: unknown };
@@ -597,6 +638,12 @@ export interface InvitationsComponent {
       { token: string },
       RawView | null
     >;
+    migrateLegacyTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { batch?: number },
+      number
+    >;
     prune: FunctionReference<
       "mutation",
       "internal",
@@ -615,7 +662,7 @@ export interface InvitationsComponent {
       "query",
       "internal",
       { resourceRef: string; paginationOpts: PaginationOptions },
-      PaginationResult<RawView>
+      PaginationResult<RawMetadata>
     >;
     listByResourceState: FunctionReference<
       "query",
@@ -625,7 +672,7 @@ export interface InvitationsComponent {
         state: InvitationState;
         paginationOpts: PaginationOptions;
       },
-      PaginationResult<RawView>
+      PaginationResult<RawMetadata>
     >;
   };
 }
@@ -658,8 +705,9 @@ interface RunMutationCtx {
  * `roleValidator` / `payloadValidator` to narrow that opaque data to
  * `TRole` / `TPayload` at the boundary — there is no unchecked cast.
  *
- * At this minimal stage the invite (including its token) is modelled
- * self-contained; a later version would delegate the hashed/revocable token to
+ * Invitation state is self-contained, but only a SHA-256 token digest is persisted;
+ * the raw bearer token is returned once by `issue`. A later version could delegate
+ * the hashed/revocable token to
  * `@vllnt/convex-tokens` and write the granted membership via
  * `@vllnt/convex-memberships`, with `accept` composing the two.
  *
@@ -705,10 +753,8 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     return parser(value);
   }
 
-  /** Project a raw component view into the typed, validated client view. */
-  private view(raw: RawView): InvitationView<TRole, TPayload> {
+  private metadata(raw: RawMetadata): InvitationMetadata<TRole, TPayload> {
     return {
-      token: raw.token,
       resourceRef: raw.resourceRef,
       role: this.parse(raw.role, this.roleValidator),
       inviterRef: raw.inviterRef,
@@ -721,6 +767,11 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
       acceptedBy: raw.acceptedBy,
       revokedAt: raw.revokedAt,
     };
+  }
+
+  /** Project a raw component view into the typed, validated client view. */
+  private view(raw: RawView): InvitationView<TRole, TPayload> {
+    return { token: raw.token, ...this.metadata(raw) };
   }
 
   /** Project a raw accept grant into the typed, validated grant. */
@@ -797,6 +848,11 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     return raw === null ? null : this.view(raw);
   }
 
+  /** Migrate raw pre-upgrade bearer tokens to hashed storage in bounded batches. */
+  migrateLegacyTokens(ctx: RunMutationCtx, batch?: number): Promise<number> {
+    return ctx.runMutation(this.component.mutations.migrateLegacyTokens, { batch });
+  }
+
   /**
    * Sweep stale `pending` invites to `expired` and delete terminal invites past
    * retention, in bounded batches oldest-first. `before` (the TTL cutoff) and
@@ -839,12 +895,12 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     ctx: RunQueryCtx,
     resourceRef: string,
     paginationOpts: PaginationOptions,
-  ): Promise<PaginationResult<InvitationView<TRole, TPayload>>> {
+  ): Promise<PaginationResult<InvitationMetadata<TRole, TPayload>>> {
     const result = await ctx.runQuery(this.component.queries.listPending, {
       resourceRef,
       paginationOpts,
     });
-    return { ...result, page: result.page.map((raw) => this.view(raw)) };
+    return { ...result, page: result.page.map((raw) => this.metadata(raw)) };
   }
 
   /**
@@ -857,17 +913,18 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     resourceRef: string,
     state: InvitationState,
     paginationOpts: PaginationOptions,
-  ): Promise<PaginationResult<InvitationView<TRole, TPayload>>> {
+  ): Promise<PaginationResult<InvitationMetadata<TRole, TPayload>>> {
     const result = await ctx.runQuery(
       this.component.queries.listByResourceState,
       { resourceRef, state, paginationOpts },
     );
-    return { ...result, page: result.page.map((raw) => this.view(raw)) };
+    return { ...result, page: result.page.map((raw) => this.metadata(raw)) };
   }
 }
 
 export type {
   InvitationGrant,
+  InvitationMetadata,
   InvitationState,
   InvitationView,
   InvitationsOptions,
@@ -887,28 +944,27 @@ import { v } from "convex/values";
 import { invitationState, jsonValue } from "./validators";
 
 /**
- * Sandboxed table — the invitation's own concern. A `token` is a
- * component-minted single-use secret that names one invitation; the host hands
+ * Sandboxed table — the invitation's own concern. A `tokenHash` is the
+ * SHA-256 digest of a component-minted single-use secret; the host hands the raw token
  * it to the invitee (out of band — email, link) and the invitee redeems it via
  * `accept`. `resourceRef` is the opaque host resource the invite grants access
  * to (an org, a team, a workspace); `role`/`payload` are opaque host data
  * carried through to the host on accept. `state` tracks the lifecycle and
  * `expiresAt` the TTL.
  *
- * Indexes serve token redemption/lookup (`by_token`), the pending-per-resource
+ * Indexes serve token redemption/lookup (`by_token_hash`), the pending-per-resource
  * listing (`by_resource_state`), the TTL expiry sweep over open invites
  * (`by_state_expires`), and the terminal retention sweep
  * (`by_state_created`, oldest-first).
  *
- * The component holds no membership and no real secret store at this minimal
- * stage — it models the invite self-contained. A later version would delegate
- * the hashed/revocable token to `@vllnt/convex-tokens` and write the granted
- * membership via `@vllnt/convex-memberships`; today the `token` lives here and
- * acceptance returns the grant to the host to apply.
+ * The component holds no membership. It stores only a deterministic token digest,
+ * returns the raw token once on issue, and returns the grant to the host on acceptance.
  */
 export default defineSchema({
   invitations: defineTable({
-    token: v.string(),
+    tokenHash: v.optional(v.string()),
+    /** @deprecated migration-only raw token for rows written before hashed storage. */
+    token: v.optional(v.string()),
     resourceRef: v.string(),
     role: v.optional(jsonValue),
     inviterRef: v.optional(v.string()),
@@ -921,6 +977,7 @@ export default defineSchema({
     acceptedBy: v.optional(v.string()),
     revokedAt: v.optional(v.number()),
   })
+    .index("by_token_hash", ["tokenHash"])
     .index("by_token", ["token"])
     .index("by_resource_state", ["resourceRef", "state", "createdAt"])
     .index("by_state_expires", ["state", "expiresAt"])
@@ -964,6 +1021,20 @@ export const invitationState = v.union(
  * interpreting them. `token` is the single-use secret the host hands to the
  * invitee; the host gates who may read it.
  */
+export const invitationMetadataView = v.object({
+  resourceRef: v.string(),
+  role: v.optional(jsonValue),
+  inviterRef: v.optional(v.string()),
+  inviteeRef: v.optional(v.string()),
+  payload: v.optional(jsonValue),
+  state: invitationState,
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  acceptedBy: v.optional(v.string()),
+  revokedAt: v.optional(v.number()),
+});
+
 export const invitationView = v.object({
   token: v.string(),
   resourceRef: v.string(),
@@ -989,7 +1060,13 @@ export const invitationView = v.object({
 import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
 import { mutation } from "./_generated/server";
+import { DEFAULT_RETENTION_MS } from "../shared";
+import { migrateLegacyToken, withLegacyTokenFallback } from "./legacyToken";
+import { tokenDigest, validateToken } from "./token";
 import { invitationView, jsonValue } from "./validators";
+
+const DEFAULT_MIGRATION_BATCH = 50;
+const MAX_MIGRATION_BATCH = 100;
 
 /**
  * Issue an invitation to a `resourceRef` and return the single-use `token` the
@@ -1017,11 +1094,17 @@ export const issue = mutation({
   },
   returns: v.object({ token: v.string(), expiresAt: v.number() }),
   handler: async (ctx, args) => {
-    const existing = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const existingHash = await ctx.db
+      .query("invitations")
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
+      .unique();
+    const existingLegacy = await ctx.db
       .query("invitations")
       .withIndex("by_token", (q) => q.eq("token", args.token))
       .unique();
-    if (existing !== null) {
+    if (existingHash !== null || existingLegacy !== null) {
       throw new ConvexError({
         code: "DUPLICATE_TOKEN",
         message: `invitation token already exists`,
@@ -1029,7 +1112,7 @@ export const issue = mutation({
     }
 
     await ctx.db.insert("invitations", {
-      token: args.token,
+      tokenHash,
       resourceRef: args.resourceRef,
       role: args.role,
       inviterRef: args.inviterRef,
@@ -1040,6 +1123,49 @@ export const issue = mutation({
       expiresAt: args.expiresAt,
     });
     return { token: args.token, expiresAt: args.expiresAt };
+  },
+});
+
+/** Migrate raw pre-upgrade bearer tokens to SHA-256 digests in bounded batches. */
+export const migrateLegacyTokens = mutation({
+  args: { batch: v.optional(v.number()) },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const batch = args.batch ?? DEFAULT_MIGRATION_BATCH;
+    if (
+      !Number.isFinite(batch) ||
+      !Number.isInteger(batch) ||
+      batch < 1 ||
+      batch > MAX_MIGRATION_BATCH
+    ) {
+      throw new ConvexError({
+        code: "INVALID_BATCH",
+        message: `batch must be an integer between 1 and ${MAX_MIGRATION_BATCH}`,
+      });
+    }
+
+    const emptyToken = await ctx.db
+      .query("invitations")
+      .withIndex("by_token", (q) => q.eq("token", ""))
+      .unique();
+    const remaining = batch - (emptyToken === null ? 0 : 1);
+    const nonempty =
+      remaining === 0
+        ? []
+        : await ctx.db
+            .query("invitations")
+            .withIndex("by_token", (q) => q.gt("token", ""))
+            .take(remaining);
+    const legacy = emptyToken === null ? nonempty : [emptyToken, ...nonempty];
+    for (const invite of legacy) {
+      // Both index ranges above select rows whose optional raw token is defined.
+      const token = invite.token as string;
+      await migrateLegacyToken(ctx.db, invite, await tokenDigest(token));
+    }
+    if (legacy.length === batch) {
+      await ctx.scheduler.runAfter(0, api.mutations.migrateLegacyTokens, { batch });
+    }
+    return legacy.length;
   },
 });
 
@@ -1072,16 +1198,20 @@ export const accept = mutation({
     payload: v.optional(jsonValue),
   }),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    if (invite === null) {
+    const found = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    if (found === null) {
       throw new ConvexError({
         code: "NOT_FOUND",
         message: `invitation not found`,
       });
     }
+    const invite = await migrateLegacyToken(ctx.db, found, tokenHash);
     if (invite.state !== "pending") {
       throw new ConvexError({
         code: `ALREADY_${invite.state.toUpperCase()}`,
@@ -1097,7 +1227,7 @@ export const accept = mutation({
       });
     }
 
-    await ctx.db.patch(invite._id, {
+    await ctx.db.patch("invitations", invite._id, {
       state: "accepted",
       acceptedAt: now,
       acceptedBy: args.acceptedBy,
@@ -1125,23 +1255,27 @@ export const revoke = mutation({
   args: { token: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    if (invite === null) {
+    const found = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    if (found === null) {
       throw new ConvexError({
         code: "NOT_FOUND",
         message: `invitation not found`,
       });
     }
+    const invite = await migrateLegacyToken(ctx.db, found, tokenHash);
     if (invite.state !== "pending") {
       throw new ConvexError({
         code: `ALREADY_${invite.state.toUpperCase()}`,
         message: `invitation is already ${invite.state} and cannot be revoked`,
       });
     }
-    await ctx.db.patch(invite._id, { state: "revoked", revokedAt: Date.now() });
+    await ctx.db.patch("invitations", invite._id, { state: "revoked", revokedAt: Date.now() });
     return null;
   },
 });
@@ -1157,18 +1291,22 @@ export const peek = mutation({
   args: { token: v.string() },
   returns: v.union(v.null(), invitationView),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    if (invite === null) {
+    const found = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    if (found === null) {
       return null;
     }
+    const invite = await migrateLegacyToken(ctx.db, found, tokenHash);
     if (invite.state === "pending" && invite.expiresAt <= Date.now()) {
-      await ctx.db.patch(invite._id, { state: "expired" });
-      return { ...view(invite), state: "expired" as const };
+      await ctx.db.patch("invitations", invite._id, { state: "expired" });
+      return { ...view(invite, args.token), state: "expired" as const };
     }
-    return view(invite);
+    return view(invite, args.token);
   },
 });
 
@@ -1200,9 +1338,15 @@ export const prune = mutation({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
+    if (!Number.isFinite(args.batch) || !Number.isInteger(args.batch) || args.batch < 1 || args.batch > 500) {
+      throw new ConvexError({
+        code: "INVALID_BATCH",
+        message: "batch must be an integer between 1 and 500",
+      });
+    }
     const now = Date.now();
     const before = args.before ?? now;
-    const retentionBefore = args.retentionBefore ?? now;
+    const retentionBefore = args.retentionBefore ?? now - DEFAULT_RETENTION_MS;
 
     // Retention sweep: the three terminal states, queried explicitly (no
     // query-in-loop), each consuming whatever batch budget the earlier passes
@@ -1232,7 +1376,7 @@ export const prune = mutation({
             .take(args.batch - accepted.length - revoked.length)
         : [];
     for (const row of [...accepted, ...revoked, ...expired]) {
-      await ctx.db.delete(row._id);
+      await ctx.db.delete("invitations", row._id);
     }
     const removed = accepted.length + revoked.length + expired.length;
 
@@ -1248,7 +1392,7 @@ export const prune = mutation({
             .take(remaining)
         : [];
     for (const row of stale) {
-      await ctx.db.patch(row._id, { state: "expired" });
+      await ctx.db.patch("invitations", row._id, { state: "expired" });
     }
 
     const touched = removed + stale.length;
@@ -1265,7 +1409,6 @@ export const prune = mutation({
 
 /** Project a stored invitation row to its public view (drops internal fields). */
 function view(invite: {
-  token: string;
   resourceRef: string;
   role?: unknown;
   inviterRef?: string;
@@ -1277,9 +1420,9 @@ function view(invite: {
   acceptedAt?: number;
   acceptedBy?: string;
   revokedAt?: number;
-}) {
+}, token: string) {
   return {
-    token: invite.token,
+    token,
     resourceRef: invite.resourceRef,
     role: invite.role,
     inviterRef: invite.inviterRef,
@@ -1304,13 +1447,31 @@ function view(invite: {
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query } from "./_generated/server";
-import { invitationState, invitationView } from "./validators";
+import { withLegacyTokenFallback } from "./legacyToken";
+import { tokenDigest, validateToken } from "./token";
+import { invitationMetadataView, invitationState, invitationView } from "./validators";
 import type { Doc } from "./_generated/dataModel";
 
 /** Project a stored invitation row to its public view (drops internal fields). */
-function view(invite: Doc<"invitations">) {
+function metadataView(invite: Doc<"invitations">) {
   return {
-    token: invite.token,
+    resourceRef: invite.resourceRef,
+    role: invite.role,
+    inviterRef: invite.inviterRef,
+    inviteeRef: invite.inviteeRef,
+    payload: invite.payload,
+    state: invite.state,
+    createdAt: invite.createdAt,
+    expiresAt: invite.expiresAt,
+    acceptedAt: invite.acceptedAt,
+    acceptedBy: invite.acceptedBy,
+    revokedAt: invite.revokedAt,
+  };
+}
+
+function view(invite: Doc<"invitations">, token: string) {
+  return {
+    token,
     resourceRef: invite.resourceRef,
     role: invite.role,
     inviterRef: invite.inviterRef,
@@ -1336,11 +1497,14 @@ export const getByToken = query({
   args: { token: v.string() },
   returns: v.union(v.null(), invitationView),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    return invite === null ? null : view(invite);
+    const invite = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    return invite === null ? null : view(invite, args.token);
   },
 });
 
@@ -1355,7 +1519,7 @@ export const getByToken = query({
 export const listPending = query({
   args: { resourceRef: v.string(), paginationOpts: paginationOptsValidator },
   returns: v.object({
-    page: v.array(invitationView),
+    page: v.array(invitationMetadataView),
     isDone: v.boolean(),
     continueCursor: v.string(),
     splitCursor: v.optional(v.union(v.string(), v.null())),
@@ -1375,7 +1539,7 @@ export const listPending = query({
       )
       .order("asc")
       .paginate(args.paginationOpts);
-    return { ...result, page: result.page.map(view) };
+    return { ...result, page: result.page.map(metadataView) };
   },
 });
 
@@ -1391,7 +1555,7 @@ export const listByResourceState = query({
     paginationOpts: paginationOptsValidator,
   },
   returns: v.object({
-    page: v.array(invitationView),
+    page: v.array(invitationMetadataView),
     isDone: v.boolean(),
     continueCursor: v.string(),
     splitCursor: v.optional(v.union(v.string(), v.null())),
@@ -1411,7 +1575,7 @@ export const listByResourceState = query({
       )
       .order("asc")
       .paginate(args.paginationOpts);
-    return { ...result, page: result.page.map(view) };
+    return { ...result, page: result.page.map(metadataView) };
   },
 });
 
@@ -1442,6 +1606,13 @@ export const PRUNE_INTERVAL = { hours: 24 } as const;
 export const PRUNE_BATCH = 200;
 
 const crons = cronJobs();
+
+crons.interval(
+  "invitations:migrate-legacy-tokens",
+  PRUNE_INTERVAL,
+  api.mutations.migrateLegacyTokens,
+  {},
+);
 
 crons.interval("invitations:prune", PRUNE_INTERVAL, api.mutations.prune, {
   batch: PRUNE_BATCH,

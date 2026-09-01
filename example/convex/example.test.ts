@@ -292,6 +292,7 @@ describe("invitations — listing (paginated)", () => {
     });
     expect(pending.page).toHaveLength(2);
     expect(pending.page.map((i) => i.createdAt)).toEqual([0, 20]);
+    expect(pending.page.every((invite) => !("token" in invite))).toBe(true);
     expect(pending.isDone).toBe(true);
   });
 
@@ -326,6 +327,7 @@ describe("invitations — listing (paginated)", () => {
     });
     expect(accepted.page).toHaveLength(1);
     expect(accepted.page[0].state).toBe("accepted");
+    expect("token" in accepted.page[0]).toBe(false);
     // an empty state returns a done empty page
     const revoked = await t.query(api.example.listByResourceState, {
       resourceRef: "org_h",
@@ -446,7 +448,28 @@ describe("invitations — prune (TTL sweep + retention + self-reschedule)", () =
     expect(await t.query(api.example.getByToken, { token })).toBeNull();
   });
 
-  test("prune with no cutoffs defaults both to server now", async () => {
+  test("default prune retains terminal invitations for 30 days", async () => {
+    const t = setup();
+    const { token } = await t.mutation(api.example.issue, { resourceRef: "o" });
+    await t.mutation(api.example.accept, { token, acceptedBy: "u" });
+
+    vi.setSystemTime(30 * 24 * 60 * 60 * 1_000);
+    expect(await t.mutation(api.example.prune, {})).toBe(0);
+    expect(await t.mutation(api.example.peek, { token })).not.toBeNull();
+
+    vi.setSystemTime(30 * 24 * 60 * 60 * 1_000 + 1);
+    expect(await t.mutation(api.example.prune, {})).toBe(1);
+    expect(await t.mutation(api.example.peek, { token })).toBeNull();
+  });
+
+  test.each([Number.NaN, 0, -1, 1.5, 501])("rejects invalid batch %s", async (batch) => {
+    const t = setup();
+    await expect(
+      t.mutation(api.example.prune, { batch }),
+    ).rejects.toThrow(/INVALID_BATCH|integer between/);
+  });
+
+  test("prune with no cutoffs defaults TTL to server now", async () => {
     const t = setup();
     await t.mutation(api.example.issue, { resourceRef: "o", ttlMs: 1 });
     vi.setSystemTime(1_000);
@@ -454,8 +477,9 @@ describe("invitations — prune (TTL sweep + retention + self-reschedule)", () =
     expect(await t.mutation(api.example.prune, {})).toBe(1);
   });
 
-  test("prune on an empty table returns 0", async () => {
+  test("maintenance on an empty table returns 0", async () => {
     const t = setup();
+    expect(await t.mutation(api.example.migrateLegacyTokens, {})).toBe(0);
     expect(
       await t.mutation(api.example.prune, {
         before: 9_999_999,
@@ -534,6 +558,9 @@ describe("invitations — built-in prune cron", () => {
     expect(PRUNE_INTERVAL).toEqual({ hours: 24 });
     expect(PRUNE_BATCH).toBe(200);
     expect(Object.keys(crons.crons)).toContain("invitations:prune");
+    expect(Object.keys(crons.crons)).toContain("invitations:migrate-legacy-tokens");
+    const migration = crons.crons["invitations:migrate-legacy-tokens"];
+    expect(migration?.name).toBe("mutations:migrateLegacyTokens");
     const job = crons.crons["invitations:prune"];
     expect(job?.name).toBe("mutations:prune");
     expect(job?.args).toEqual([{ batch: 200 }]);

@@ -46,6 +46,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         { expiresAt: number; token: string },
         Name
       >;
+      migrateLegacyTokens: FunctionReference<
+        "mutation",
+        "internal",
+        { batch?: number },
+        number,
+        Name
+      >;
       peek: FunctionReference<
         "mutation",
         "internal",
@@ -132,7 +139,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             revokedAt?: number;
             role?: any;
             state: "pending" | "accepted" | "revoked" | "expired";
-            token: string;
           }>;
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
           splitCursor?: string | null;
@@ -168,7 +174,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             revokedAt?: number;
             role?: any;
             state: "pending" | "accepted" | "revoked" | "expired";
-            token: string;
           }>;
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
           splitCursor?: string | null;

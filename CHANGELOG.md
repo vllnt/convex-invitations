@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Breaking
+
+- Pending/history list pages now return token-free `InvitationMetadata` projections. Consumers that
+  previously read `page[].token` must retain the one-time `issue()` result for delivery and use
+  `peek(token)` / `getByToken(token)` for direct token lookup.
+
+### Fixed
+
+- Apply the documented 30-day default retention window to terminal invitations instead of
+  deleting them on the next daily sweep.
+- Reject invalid prune batch sizes to prevent infinite self-scheduling and oversized transactions.
+- Store only SHA-256 invitation-token digests and remove bearer tokens from pending/history list
+  projections; raw tokens are returned only when issued and accepted only for direct lookup.
+- Migrate pre-upgrade raw bearer tokens opportunistically on mutation and through a bounded daily
+  backfill while preserving direct lookup and duplicate detection during the transition.
+
 ### Changed
 
 - Treat Convex `_generated` output as CLI-owned, exclude it from formatting, and expose a

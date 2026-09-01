@@ -9,8 +9,10 @@
  */
 
 import type * as crons from "../crons.js";
+import type * as legacyToken from "../legacyToken.js";
 import type * as mutations from "../mutations.js";
 import type * as queries from "../queries.js";
+import type * as token from "../token.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -22,8 +24,10 @@ import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
   crons: typeof crons;
+  legacyToken: typeof legacyToken;
   mutations: typeof mutations;
   queries: typeof queries;
+  token: typeof token;
   validators: typeof validators;
 }> = anyApi as any;
 
