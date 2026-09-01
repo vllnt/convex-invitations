@@ -19,6 +19,13 @@ export const PRUNE_BATCH = 200;
 
 const crons = cronJobs();
 
+crons.interval(
+  "invitations:migrate-legacy-tokens",
+  PRUNE_INTERVAL,
+  api.mutations.migrateLegacyTokens,
+  {},
+);
+
 crons.interval("invitations:prune", PRUNE_INTERVAL, api.mutations.prune, {
   batch: PRUNE_BATCH,
 });

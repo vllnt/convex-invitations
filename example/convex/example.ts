@@ -70,6 +70,25 @@ const invitationView = v.object({
   revokedAt: v.optional(v.number()),
 });
 
+const invitationMetadata = v.object({
+  resourceRef: v.string(),
+  role: v.optional(v.any()),
+  inviterRef: v.optional(v.string()),
+  inviteeRef: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  state: v.union(
+    v.literal("pending"),
+    v.literal("accepted"),
+    v.literal("revoked"),
+    v.literal("expired"),
+  ),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  acceptedBy: v.optional(v.string()),
+  revokedAt: v.optional(v.number()),
+});
+
 const grant = v.object({
   resourceRef: v.string(),
   role: v.optional(v.any()),
@@ -77,7 +96,7 @@ const grant = v.object({
 });
 
 const paginated = v.object({
-  page: v.array(invitationView),
+  page: v.array(invitationMetadata),
   isDone: v.boolean(),
   continueCursor: v.string(),
   splitCursor: v.optional(v.union(v.string(), v.null())),
@@ -162,6 +181,12 @@ export const listByResourceState = query({
   returns: paginated,
   handler: (ctx, a) =>
     invites.listByResourceState(ctx, a.resourceRef, a.state, a.paginationOpts),
+});
+
+export const migrateLegacyTokens = mutation({
+  args: { batch: v.optional(v.number()) },
+  returns: v.number(),
+  handler: (ctx, args) => invites.migrateLegacyTokens(ctx, args.batch),
 });
 
 export const prune = mutation({

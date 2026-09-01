@@ -1,7 +1,13 @@
 import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
 import { mutation } from "./_generated/server";
+import { DEFAULT_RETENTION_MS } from "../shared";
+import { migrateLegacyToken, withLegacyTokenFallback } from "./legacyToken";
+import { tokenDigest, validateToken } from "./token";
 import { invitationView, jsonValue } from "./validators";
+
+const DEFAULT_MIGRATION_BATCH = 50;
+const MAX_MIGRATION_BATCH = 100;
 
 /**
  * Issue an invitation to a `resourceRef` and return the single-use `token` the
@@ -29,11 +35,17 @@ export const issue = mutation({
   },
   returns: v.object({ token: v.string(), expiresAt: v.number() }),
   handler: async (ctx, args) => {
-    const existing = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const existingHash = await ctx.db
+      .query("invitations")
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
+      .unique();
+    const existingLegacy = await ctx.db
       .query("invitations")
       .withIndex("by_token", (q) => q.eq("token", args.token))
       .unique();
-    if (existing !== null) {
+    if (existingHash !== null || existingLegacy !== null) {
       throw new ConvexError({
         code: "DUPLICATE_TOKEN",
         message: `invitation token already exists`,
@@ -41,7 +53,7 @@ export const issue = mutation({
     }
 
     await ctx.db.insert("invitations", {
-      token: args.token,
+      tokenHash,
       resourceRef: args.resourceRef,
       role: args.role,
       inviterRef: args.inviterRef,
@@ -52,6 +64,49 @@ export const issue = mutation({
       expiresAt: args.expiresAt,
     });
     return { token: args.token, expiresAt: args.expiresAt };
+  },
+});
+
+/** Migrate raw pre-upgrade bearer tokens to SHA-256 digests in bounded batches. */
+export const migrateLegacyTokens = mutation({
+  args: { batch: v.optional(v.number()) },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const batch = args.batch ?? DEFAULT_MIGRATION_BATCH;
+    if (
+      !Number.isFinite(batch) ||
+      !Number.isInteger(batch) ||
+      batch < 1 ||
+      batch > MAX_MIGRATION_BATCH
+    ) {
+      throw new ConvexError({
+        code: "INVALID_BATCH",
+        message: `batch must be an integer between 1 and ${MAX_MIGRATION_BATCH}`,
+      });
+    }
+
+    const emptyToken = await ctx.db
+      .query("invitations")
+      .withIndex("by_token", (q) => q.eq("token", ""))
+      .unique();
+    const remaining = batch - (emptyToken === null ? 0 : 1);
+    const nonempty =
+      remaining === 0
+        ? []
+        : await ctx.db
+            .query("invitations")
+            .withIndex("by_token", (q) => q.gt("token", ""))
+            .take(remaining);
+    const legacy = emptyToken === null ? nonempty : [emptyToken, ...nonempty];
+    for (const invite of legacy) {
+      // Both index ranges above select rows whose optional raw token is defined.
+      const token = invite.token as string;
+      await migrateLegacyToken(ctx.db, invite, await tokenDigest(token));
+    }
+    if (legacy.length === batch) {
+      await ctx.scheduler.runAfter(0, api.mutations.migrateLegacyTokens, { batch });
+    }
+    return legacy.length;
   },
 });
 
@@ -84,16 +139,20 @@ export const accept = mutation({
     payload: v.optional(jsonValue),
   }),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    if (invite === null) {
+    const found = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    if (found === null) {
       throw new ConvexError({
         code: "NOT_FOUND",
         message: `invitation not found`,
       });
     }
+    const invite = await migrateLegacyToken(ctx.db, found, tokenHash);
     if (invite.state !== "pending") {
       throw new ConvexError({
         code: `ALREADY_${invite.state.toUpperCase()}`,
@@ -137,16 +196,20 @@ export const revoke = mutation({
   args: { token: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    if (invite === null) {
+    const found = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    if (found === null) {
       throw new ConvexError({
         code: "NOT_FOUND",
         message: `invitation not found`,
       });
     }
+    const invite = await migrateLegacyToken(ctx.db, found, tokenHash);
     if (invite.state !== "pending") {
       throw new ConvexError({
         code: `ALREADY_${invite.state.toUpperCase()}`,
@@ -169,18 +232,22 @@ export const peek = mutation({
   args: { token: v.string() },
   returns: v.union(v.null(), invitationView),
   handler: async (ctx, args) => {
-    const invite = await ctx.db
+    validateToken(args.token);
+    const tokenHash = await tokenDigest(args.token);
+    const hashed = await ctx.db
       .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
-    if (invite === null) {
+    const found = await withLegacyTokenFallback(ctx.db, hashed, args.token);
+    if (found === null) {
       return null;
     }
+    const invite = await migrateLegacyToken(ctx.db, found, tokenHash);
     if (invite.state === "pending" && invite.expiresAt <= Date.now()) {
       await ctx.db.patch("invitations", invite._id, { state: "expired" });
-      return { ...view(invite), state: "expired" as const };
+      return { ...view(invite, args.token), state: "expired" as const };
     }
-    return view(invite);
+    return view(invite, args.token);
   },
 });
 
@@ -212,9 +279,15 @@ export const prune = mutation({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
+    if (!Number.isFinite(args.batch) || !Number.isInteger(args.batch) || args.batch < 1 || args.batch > 500) {
+      throw new ConvexError({
+        code: "INVALID_BATCH",
+        message: "batch must be an integer between 1 and 500",
+      });
+    }
     const now = Date.now();
     const before = args.before ?? now;
-    const retentionBefore = args.retentionBefore ?? now;
+    const retentionBefore = args.retentionBefore ?? now - DEFAULT_RETENTION_MS;
 
     // Retention sweep: the three terminal states, queried explicitly (no
     // query-in-loop), each consuming whatever batch budget the earlier passes
@@ -277,7 +350,6 @@ export const prune = mutation({
 
 /** Project a stored invitation row to its public view (drops internal fields). */
 function view(invite: {
-  token: string;
   resourceRef: string;
   role?: unknown;
   inviterRef?: string;
@@ -289,9 +361,9 @@ function view(invite: {
   acceptedAt?: number;
   acceptedBy?: string;
   revokedAt?: number;
-}) {
+}, token: string) {
   return {
-    token: invite.token,
+    token,
     resourceRef: invite.resourceRef,
     role: invite.role,
     inviterRef: invite.inviterRef,

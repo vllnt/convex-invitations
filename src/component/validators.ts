@@ -28,6 +28,20 @@ export const invitationState = v.union(
  * interpreting them. `token` is the single-use secret the host hands to the
  * invitee; the host gates who may read it.
  */
+export const invitationMetadataView = v.object({
+  resourceRef: v.string(),
+  role: v.optional(jsonValue),
+  inviterRef: v.optional(v.string()),
+  inviteeRef: v.optional(v.string()),
+  payload: v.optional(jsonValue),
+  state: invitationState,
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  acceptedBy: v.optional(v.string()),
+  revokedAt: v.optional(v.number()),
+});
+
 export const invitationView = v.object({
   token: v.string(),
   resourceRef: v.string(),

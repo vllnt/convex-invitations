@@ -7,6 +7,7 @@ import type {
 } from "convex/server";
 import type {
   InvitationGrant,
+  InvitationMetadata,
   InvitationState,
   InvitationView,
   InvitationsOptions,
@@ -20,8 +21,7 @@ import { DEFAULT_PRUNE_BATCH, DEFAULT_TTL_MS } from "../shared.js";
  * data. `role` and `payload` are `unknown` here; the {@link Invitations} client
  * runs the host validators over them at its typed boundary.
  */
-type RawView = {
-  token: string;
+type RawMetadata = {
   resourceRef: string;
   role?: unknown;
   inviterRef?: string;
@@ -34,6 +34,8 @@ type RawView = {
   acceptedBy?: string;
   revokedAt?: number;
 };
+
+type RawView = RawMetadata & { token: string };
 
 /** The component's raw accept grant, before the client narrows opaque host data. */
 type RawGrant = { resourceRef: string; role?: unknown; payload?: unknown };
@@ -78,6 +80,12 @@ export interface InvitationsComponent {
       { token: string },
       RawView | null
     >;
+    migrateLegacyTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { batch?: number },
+      number
+    >;
     prune: FunctionReference<
       "mutation",
       "internal",
@@ -96,7 +104,7 @@ export interface InvitationsComponent {
       "query",
       "internal",
       { resourceRef: string; paginationOpts: PaginationOptions },
-      PaginationResult<RawView>
+      PaginationResult<RawMetadata>
     >;
     listByResourceState: FunctionReference<
       "query",
@@ -106,7 +114,7 @@ export interface InvitationsComponent {
         state: InvitationState;
         paginationOpts: PaginationOptions;
       },
-      PaginationResult<RawView>
+      PaginationResult<RawMetadata>
     >;
   };
 }
@@ -139,8 +147,9 @@ interface RunMutationCtx {
  * `roleValidator` / `payloadValidator` to narrow that opaque data to
  * `TRole` / `TPayload` at the boundary — there is no unchecked cast.
  *
- * At this minimal stage the invite (including its token) is modelled
- * self-contained; a later version would delegate the hashed/revocable token to
+ * Invitation state is self-contained, but only a SHA-256 token digest is persisted;
+ * the raw bearer token is returned once by `issue`. A later version could delegate
+ * the hashed/revocable token to
  * `@vllnt/convex-tokens` and write the granted membership via
  * `@vllnt/convex-memberships`, with `accept` composing the two.
  *
@@ -186,10 +195,8 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     return parser(value);
   }
 
-  /** Project a raw component view into the typed, validated client view. */
-  private view(raw: RawView): InvitationView<TRole, TPayload> {
+  private metadata(raw: RawMetadata): InvitationMetadata<TRole, TPayload> {
     return {
-      token: raw.token,
       resourceRef: raw.resourceRef,
       role: this.parse(raw.role, this.roleValidator),
       inviterRef: raw.inviterRef,
@@ -202,6 +209,11 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
       acceptedBy: raw.acceptedBy,
       revokedAt: raw.revokedAt,
     };
+  }
+
+  /** Project a raw component view into the typed, validated client view. */
+  private view(raw: RawView): InvitationView<TRole, TPayload> {
+    return { token: raw.token, ...this.metadata(raw) };
   }
 
   /** Project a raw accept grant into the typed, validated grant. */
@@ -278,6 +290,11 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     return raw === null ? null : this.view(raw);
   }
 
+  /** Migrate raw pre-upgrade bearer tokens to hashed storage in bounded batches. */
+  migrateLegacyTokens(ctx: RunMutationCtx, batch?: number): Promise<number> {
+    return ctx.runMutation(this.component.mutations.migrateLegacyTokens, { batch });
+  }
+
   /**
    * Sweep stale `pending` invites to `expired` and delete terminal invites past
    * retention, in bounded batches oldest-first. `before` (the TTL cutoff) and
@@ -320,12 +337,12 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     ctx: RunQueryCtx,
     resourceRef: string,
     paginationOpts: PaginationOptions,
-  ): Promise<PaginationResult<InvitationView<TRole, TPayload>>> {
+  ): Promise<PaginationResult<InvitationMetadata<TRole, TPayload>>> {
     const result = await ctx.runQuery(this.component.queries.listPending, {
       resourceRef,
       paginationOpts,
     });
-    return { ...result, page: result.page.map((raw) => this.view(raw)) };
+    return { ...result, page: result.page.map((raw) => this.metadata(raw)) };
   }
 
   /**
@@ -338,17 +355,18 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
     resourceRef: string,
     state: InvitationState,
     paginationOpts: PaginationOptions,
-  ): Promise<PaginationResult<InvitationView<TRole, TPayload>>> {
+  ): Promise<PaginationResult<InvitationMetadata<TRole, TPayload>>> {
     const result = await ctx.runQuery(
       this.component.queries.listByResourceState,
       { resourceRef, state, paginationOpts },
     );
-    return { ...result, page: result.page.map((raw) => this.view(raw)) };
+    return { ...result, page: result.page.map((raw) => this.metadata(raw)) };
   }
 }
 
 export type {
   InvitationGrant,
+  InvitationMetadata,
   InvitationState,
   InvitationView,
   InvitationsOptions,
