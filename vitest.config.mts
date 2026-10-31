@@ -21,6 +21,9 @@ export default defineConfig({
         "src/component/validators.ts",
         "src/component/schema.ts",
         "src/component/crons.ts",
+        "src/component/guards.ts",
+        "src/component/token.ts",
+        "src/component/legacyToken.ts",
       ],
       thresholds: {
         statements: 100,

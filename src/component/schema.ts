@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { invitationState, jsonValue } from "./validators";
+import { invitationState, jsonValue } from "./validators.js";
 
 /**
  * Sandboxed table — the invitation's own concern. A `tokenHash` is the

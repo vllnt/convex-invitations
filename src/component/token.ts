@@ -3,8 +3,12 @@ import { ConvexError } from "convex/values";
 const encoder = new TextEncoder();
 const MAX_TOKEN_LENGTH = 512;
 
+export function isValidToken(token: string): boolean {
+  return token.length > 0 && token.length <= MAX_TOKEN_LENGTH;
+}
+
 export function validateToken(token: string): void {
-  if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) {
+  if (!isValidToken(token)) {
     throw new ConvexError({
       code: "INVALID_TOKEN",
       message: `token must be between 1 and ${MAX_TOKEN_LENGTH} characters`,

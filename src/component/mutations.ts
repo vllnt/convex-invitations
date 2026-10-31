@@ -1,10 +1,11 @@
 import { ConvexError, v } from "convex/values";
-import { api } from "./_generated/api";
-import { mutation } from "./_generated/server";
-import { DEFAULT_RETENTION_MS } from "../shared";
-import { migrateLegacyToken, withLegacyTokenFallback } from "./legacyToken";
-import { tokenDigest, validateToken } from "./token";
-import { invitationView, jsonValue } from "./validators";
+import { api } from "./_generated/api.js";
+import { mutation } from "./_generated/server.js";
+import { DEFAULT_RETENTION_MS } from "../shared.js";
+import { migrateLegacyToken, withLegacyTokenFallback } from "./legacyToken.js";
+import { requireFiniteTime, requireNonEmpty, requireNotNaN } from "./guards.js";
+import { tokenDigest, validateToken } from "./token.js";
+import { invitationView, jsonValue } from "./validators.js";
 
 const DEFAULT_MIGRATION_BATCH = 50;
 const MAX_MIGRATION_BATCH = 100;
@@ -36,6 +37,17 @@ export const issue = mutation({
   returns: v.object({ token: v.string(), expiresAt: v.number() }),
   handler: async (ctx, args) => {
     validateToken(args.token);
+    requireNonEmpty("resourceRef", args.resourceRef);
+    if (args.inviterRef !== undefined) requireNonEmpty("inviterRef", args.inviterRef);
+    if (args.inviteeRef !== undefined) requireNonEmpty("inviteeRef", args.inviteeRef);
+    requireFiniteTime("expiresAt", args.expiresAt);
+    const createdAt = Date.now();
+    if (args.expiresAt <= createdAt) {
+      throw new ConvexError({
+        code: "INVALID_ARGUMENT",
+        message: "expiresAt must be in the future",
+      });
+    }
     const tokenHash = await tokenDigest(args.token);
     const existingHash = await ctx.db
       .query("invitations")
@@ -60,7 +72,7 @@ export const issue = mutation({
       inviteeRef: args.inviteeRef,
       payload: args.payload,
       state: "pending",
-      createdAt: Date.now(),
+      createdAt,
       expiresAt: args.expiresAt,
     });
     return { token: args.token, expiresAt: args.expiresAt };
@@ -140,6 +152,7 @@ export const accept = mutation({
   }),
   handler: async (ctx, args) => {
     validateToken(args.token);
+    requireNonEmpty("acceptedBy", args.acceptedBy);
     const tokenHash = await tokenDigest(args.token);
     const hashed = await ctx.db
       .query("invitations")
@@ -285,6 +298,8 @@ export const prune = mutation({
         message: "batch must be an integer between 1 and 500",
       });
     }
+    if (args.before !== undefined) requireNotNaN("before", args.before);
+    if (args.retentionBefore !== undefined) requireNotNaN("retentionBefore", args.retentionBefore);
     const now = Date.now();
     const before = args.before ?? now;
     const retentionBefore = args.retentionBefore ?? now - DEFAULT_RETENTION_MS;

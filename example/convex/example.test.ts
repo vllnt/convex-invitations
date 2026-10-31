@@ -588,3 +588,66 @@ describe("invitations — host/component table isolation", () => {
     ).toBeNull();
   });
 });
+
+describe("invitations — input validation", () => {
+  test.each([
+    ["NaN ttlMs", { ttlMs: Number.NaN }],
+    ["infinite ttlMs", { ttlMs: Number.POSITIVE_INFINITY }],
+    ["NaN expiresAt", { expiresAt: Number.NaN }],
+    ["infinite expiresAt", { expiresAt: Number.POSITIVE_INFINITY }],
+  ])("issue rejects a non-finite expiry (%s) instead of minting a never-expiring invite", async (_name, opts) => {
+    const t = setup();
+    await expect(
+      t.mutation(api.example.issue, { resourceRef: "org_1", ...opts }),
+    ).rejects.toThrow(/INVALID_ARGUMENT|finite/);
+  });
+
+  test.each([
+    ["zero ttlMs", { ttlMs: 0 }],
+    ["negative ttlMs", { ttlMs: -1 }],
+    ["expiresAt equal to now", { expiresAt: 0 }],
+  ])("issue rejects an invite that is already expired (%s)", async (_name, opts) => {
+    const t = setup();
+    await expect(
+      t.mutation(api.example.issue, { resourceRef: "org_1", ...opts }),
+    ).rejects.toThrow(/INVALID_ARGUMENT|in the future/);
+  });
+
+  test.each([
+    ["resourceRef", { resourceRef: "" }],
+    ["inviterRef", { resourceRef: "org_1", inviterRef: "" }],
+    ["inviteeRef", { resourceRef: "org_1", inviteeRef: "" }],
+  ])("issue rejects an empty %s", async (_name, args) => {
+    const t = setup();
+    await expect(t.mutation(api.example.issue, args)).rejects.toThrow(
+      /INVALID_ARGUMENT|must not be empty/,
+    );
+  });
+
+  test("accept rejects an empty acceptedBy and leaves the invite pending", async () => {
+    const t = setup();
+    const { token } = await t.mutation(api.example.issue, { resourceRef: "org_1" });
+    await expect(
+      t.mutation(api.example.accept, { token, acceptedBy: "" }),
+    ).rejects.toThrow(/INVALID_ARGUMENT|must not be empty/);
+    expect((await t.query(api.example.getByToken, { token }))?.state).toBe("pending");
+  });
+
+  test("getByToken returns null for placeholder or oversized tokens instead of throwing", async () => {
+    const t = setup();
+    expect(await t.query(api.example.getByToken, { token: "" })).toBeNull();
+    expect(await t.query(api.example.getByToken, { token: "x".repeat(513) })).toBeNull();
+  });
+
+  test.each([{ before: Number.NaN }, { retentionBefore: Number.NaN }])(
+    "prune rejects a NaN cutoff rather than sweeping every invite (%o)",
+    async (cutoff) => {
+      const t = setup();
+      const { token } = await t.mutation(api.example.issue, { resourceRef: "org_1" });
+      await expect(t.mutation(api.example.prune, cutoff)).rejects.toThrow(
+        /INVALID_ARGUMENT|must not be NaN/,
+      );
+      expect((await t.query(api.example.getByToken, { token }))?.state).toBe("pending");
+    },
+  );
+});

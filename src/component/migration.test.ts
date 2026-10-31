@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { api } from "./_generated/api";
-import schema from "./schema";
-import { tokenDigest } from "./token";
+import { api } from "./_generated/api.js";
+import schema from "./schema.js";
+import { tokenDigest } from "./token.js";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -94,9 +94,12 @@ test.each(["", "x".repeat(513)])("rejects invalid bearer token length", async (t
       expiresAt: Date.now() + 60_000,
     }),
   ).rejects.toThrow(/INVALID_TOKEN|between 1 and 512/);
-  await expect(t.query(api.queries.getByToken, { token })).rejects.toThrow(
-    /INVALID_TOKEN|between 1 and 512/,
-  );
+  const invalid = /INVALID_TOKEN|between 1 and 512/;
+  await expect(t.mutation(api.mutations.accept, { token, acceptedBy: "u" })).rejects.toThrow(invalid);
+  await expect(t.mutation(api.mutations.revoke, { token })).rejects.toThrow(invalid);
+  await expect(t.mutation(api.mutations.peek, { token })).rejects.toThrow(invalid);
+  // A reactive read may be called with a placeholder: no invitation can match, so null.
+  expect(await t.query(api.queries.getByToken, { token })).toBeNull();
 });
 
 test.each([Number.NaN, 0, -1, 1.5, 101])(
