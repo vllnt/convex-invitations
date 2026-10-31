@@ -1,10 +1,10 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { query } from "./_generated/server";
-import { withLegacyTokenFallback } from "./legacyToken";
-import { tokenDigest, validateToken } from "./token";
-import { invitationMetadataView, invitationState, invitationView } from "./validators";
-import type { Doc } from "./_generated/dataModel";
+import { query } from "./_generated/server.js";
+import { withLegacyTokenFallback } from "./legacyToken.js";
+import { isValidToken, tokenDigest } from "./token.js";
+import { invitationMetadataView, invitationState, invitationView } from "./validators.js";
+import type { Doc } from "./_generated/dataModel.js";
 
 /** Project a stored invitation row to its public view (drops internal fields). */
 function metadataView(invite: Doc<"invitations">) {
@@ -51,7 +51,9 @@ export const getByToken = query({
   args: { token: v.string() },
   returns: v.union(v.null(), invitationView),
   handler: async (ctx, args) => {
-    validateToken(args.token);
+    // No invitation can hold a token of invalid length, so a reactive read with a
+    // placeholder value reports "not found" instead of throwing.
+    if (!isValidToken(args.token)) return null;
     const tokenHash = await tokenDigest(args.token);
     const hashed = await ctx.db
       .query("invitations")
