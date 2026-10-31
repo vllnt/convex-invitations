@@ -43,12 +43,10 @@ contributor invite.
 ## Installation
 
 ```bash
-pnpm add @vllnt/convex-invitations@canary convex@^1.45.0
+pnpm add @vllnt/convex-invitations convex@^1.45.0
 ```
 
-Peer dependency: `convex@^1.45.0`. This README follows `main` and the canary
-channel, including hashed-token storage and token-free lists; `latest` is the
-separate stable release. Pin an exact canary version for reproducible installs.
+Peer dependency: `convex@^1.45.0`. The `canary` dist-tag tracks `main`.
 
 ## Quick start
 
@@ -142,6 +140,10 @@ Full reference: [docs/API.md](docs/API.md).
 - `getByToken` and list queries report stored state; expired links can still
   appear pending until `peek` or the cron expires them. `accept` rejects expiry
   without persisting a state change.
+- `issue` rejects an empty `resourceRef`/`inviterRef`/`inviteeRef`, and an
+  `expiresAt` that is not finite or not in the future (`INVALID_ARGUMENT`);
+  `accept` rejects an empty `acceptedBy`. `getByToken` returns `null` for an
+  empty or over-long token.
 - `inviteeRef` is metadata, not an enforced recipient binding. The host must
   check recipient identity and resource permissions before acceptance.
 - Terminal retention defaults to 30 days from `createdAt`, not acceptance time.
@@ -179,6 +181,22 @@ pnpm test:coverage  # enforced 100% on covered files
 
 Tests run against the real component runtime via `convex-test`
 (`@edge-runtime/vm`), not mocks.
+
+### Testing your app
+
+`@vllnt/convex-invitations/test` exports `register(t, name = "invitations")` to
+mount the component in a `convex-test` instance. It needs `convex-test` and
+`vitest` (with Vite's `import.meta.glob`) in the consuming app:
+
+```ts
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
+import { register } from "@vllnt/convex-invitations/test";
+import schema from "./schema";
+
+const t = convexTest(schema, import.meta.glob("./**/*.ts"));
+register(t);
+```
 
 ## Documentation
 

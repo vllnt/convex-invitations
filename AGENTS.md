@@ -86,8 +86,8 @@ partition.
 
 - **Component-minted token, host-supplied generator:** the client mints the token (`crypto.randomUUID`
   by default, overridable via `generateToken`) so the host never has to; uniqueness is enforced in
-  `issue` (a collision throws `DUPLICATE_TOKEN`). At this minimal stage the token is stored as-is — a
-  later version hashes it via `@vllnt/convex-tokens`.
+  `issue` (a collision throws `DUPLICATE_TOKEN`). Only a SHA-256 digest of the token is stored
+  (`tokenHash`); the raw token is returned once by `issue`.
 
 - **Typed-generic opaque data, never `v.any()` dumped raw:** `role`/`payload` ride through the single
   documented `jsonValue` alias and are narrowed to `TRole`/`TPayload` by host parsers at the client

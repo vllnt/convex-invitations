@@ -134,7 +134,8 @@ automatically; call `prune` directly only for an extra or custom-cadence sweep.
 ### `getByToken(ctx, token) → InvitationView | null`
 
 The current view of one invitation by its `token`, or `null` if no such invite
-is held. A **pure read** — it reports the stored `state` as-is and does NOT flip
+is held (including an empty or over-long token, so a reactive UI can call it
+with a placeholder). A **pure read** — it reports the stored `state` as-is and does NOT flip
 a stale `pending` invite to `expired` (a query cannot write). Compare
 `expiresAt` against the clock, or call `peek` when you need read-time TTL
 enforcement. `InvitationView` is
@@ -164,7 +165,8 @@ Coded `ConvexError`s thrown by the component (`error.data.code`):
 
 | Code                                                       | Thrown by                                         | Meaning                                                           |
 | ---------------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
-| `INVALID_TOKEN`                                            | `issue`, `accept`, `revoke`, `peek`, `getByToken` | Token length must be 1–512 characters.                            |
+| `INVALID_TOKEN`                                            | `issue`, `accept`, `revoke`, `peek`                | Token length must be 1–512 characters. `getByToken` returns `null` instead. |
+| `INVALID_ARGUMENT`                                         | `issue`, `accept`, `prune`                        | Empty `resourceRef`/`inviterRef`/`inviteeRef`/`acceptedBy`; `expiresAt` not finite or not in the future (so zero/negative/`NaN` `ttlMs`); `NaN` `before`/`retentionBefore`. |
 | `INVALID_BATCH`                                            | `migrateLegacyTokens`, `prune`                    | Batch must be an integer from 1–100 (migration) or 1–500 (prune). |
 | `DUPLICATE_TOKEN`                                          | `issue`                                           | An invitation with this `token` already exists.                   |
 | `NOT_FOUND`                                                | `accept`, `revoke`                                | No invitation has this `token`.                                   |
