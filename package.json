@@ -1,6 +1,6 @@
 {
   "name": "@vllnt/convex-invitations",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Invite → accept → expire flow — issue a single-use, expiring invitation to a resource and consume it, as a Convex component",
   "license": "MIT",
   "type": "module",

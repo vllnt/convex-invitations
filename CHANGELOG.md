@@ -4,32 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Breaking
-
-- Pending/history list pages now return token-free `InvitationMetadata` projections. Consumers that
-  previously read `page[].token` must retain the one-time `issue()` result for delivery and use
-  `peek(token)` / `getByToken(token)` for direct token lookup.
+## [0.1.1] - Unreleased
 
 ### Fixed
 
-- Apply the documented 30-day default retention window to terminal invitations instead of
-  deleting them on the next daily sweep.
-- Reject invalid prune batch sizes to prevent infinite self-scheduling and oversized transactions.
-- Store only SHA-256 invitation-token digests and remove bearer tokens from pending/history list
-  projections; raw tokens are returned only when issued and accepted only for direct lookup.
-- Migrate pre-upgrade raw bearer tokens opportunistically on mutation and through a bounded daily
-  backfill while preserving direct lookup and duplicate detection during the transition.
+- `issue` rejects an `expiresAt` that is `NaN`, infinite or not in the future (so a `NaN`,
+  infinite, zero or negative `ttlMs`) with `ConvexError({ code: "INVALID_ARGUMENT" })`. Previously a
+  non-finite expiry produced an invitation that never expired.
+- `issue` rejects an empty `resourceRef`, `inviterRef` or `inviteeRef`, and `accept` an empty
+  `acceptedBy`, with `INVALID_ARGUMENT`.
+- `prune` rejects a `NaN` `before` / `retentionBefore` cutoff instead of sweeping every invitation.
+- `getByToken` returns `null` for an empty or over-long token instead of throwing, so reactive UIs
+  can call it with a placeholder. Mutations still throw `INVALID_TOKEN`.
+- The published tarball no longer includes the test file.
+- `@vllnt/convex-invitations/test` now type-checks under `moduleResolution: nodenext` (explicit `.js`
+  relative imports, Vite client types referenced).
 
 ### Changed
 
-- Treat Convex `_generated` output as CLI-owned, exclude it from formatting, and expose a
-  dedicated codegen script.
-- Refresh all direct dependencies to their latest compatible releases for canary validation.
-- Require `convex@^1.45.0` and update `convex-test` to `^0.0.56`.
+- Adopt pnpm 10 with a release-age gate; releases are published only from CI with npm trusted
+  publishing and provenance. Pin the deepmerge-ts override to 8.0.2.
+- Document the component error codes and how to use `/test` in a consuming app.
 
-## [0.1.0] - 2026-06-14
+## [0.1.0] - 2026-09-01
 
 ### Added
 
@@ -66,3 +63,26 @@ All notable changes to this project are documented here. The format is based on
 - Minimal stage: the invite (including its token) is modelled self-contained; a
   later version delegates the hashed token to `@vllnt/convex-tokens` and the
   granted membership to `@vllnt/convex-memberships`.
+
+### Breaking
+
+- Pending/history list pages now return token-free `InvitationMetadata` projections. Consumers that
+  previously read `page[].token` must retain the one-time `issue()` result for delivery and use
+  `peek(token)` / `getByToken(token)` for direct token lookup.
+
+### Fixed
+
+- Apply the documented 30-day default retention window to terminal invitations instead of
+  deleting them on the next daily sweep.
+- Reject invalid prune batch sizes to prevent infinite self-scheduling and oversized transactions.
+- Store only SHA-256 invitation-token digests and remove bearer tokens from pending/history list
+  projections; raw tokens are returned only when issued and accepted only for direct lookup.
+- Migrate pre-upgrade raw bearer tokens opportunistically on mutation and through a bounded daily
+  backfill while preserving direct lookup and duplicate detection during the transition.
+
+### Changed
+
+- Treat Convex `_generated` output as CLI-owned, exclude it from formatting, and expose a
+  dedicated codegen script.
+- Refresh all direct dependencies to their latest compatible releases for canary validation.
+- Require `convex@^1.45.0` and update `convex-test` to `^0.0.56`.
