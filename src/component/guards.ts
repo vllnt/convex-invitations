@@ -4,10 +4,15 @@ function invalidArgument(message: string): ConvexError<{ code: string; message: 
   return new ConvexError({ code: "INVALID_ARGUMENT", message });
 }
 
-/** Reject an empty host-supplied reference (`resourceRef`, `acceptedBy`, ...). */
+const MAX_REF_LENGTH = 256;
+
+/** Reject an empty or over-long host-supplied reference (`resourceRef`, `acceptedBy`, ...). */
 export function requireNonEmpty(name: string, value: string): void {
   if (value.length === 0) {
     throw invalidArgument(`${name} must not be empty`);
+  }
+  if (value.length > MAX_REF_LENGTH) {
+    throw invalidArgument(`${name} must be at most ${String(MAX_REF_LENGTH)} characters`);
   }
 }
 

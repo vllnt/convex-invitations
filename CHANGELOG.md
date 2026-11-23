@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- `issue` and `accept` reject a `resourceRef`, `inviterRef`, `inviteeRef` or `acceptedBy` longer
+  than 256 characters with `INVALID_ARGUMENT`, bounding stored row and index-key size.
 - `issue` rejects an `expiresAt` that is `NaN`, infinite or not in the future (so a `NaN`,
   infinite, zero or negative `ttlMs`) with `ConvexError({ code: "INVALID_ARGUMENT" })`. Previously a
   non-finite expiry produced an invitation that never expired.
