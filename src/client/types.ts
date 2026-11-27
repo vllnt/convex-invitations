@@ -93,12 +93,14 @@ export interface InvitationsOptions<TRole, TPayload> {
   /**
    * Validates/narrows a stored `role` to `TRole` at the boundary — applied to the
    * `role` passed into `issue` (before storage) and the `role` returned by
-   * `getByToken`/`accept`. Throws on a mismatch. Omit to leave roles unvalidated.
+   * `accept`/`peek`/`getByToken`/`listPending`/`listByResourceState`. Throws on a
+   * mismatch. Omit to leave roles unvalidated.
    */
   roleValidator?: Parser<TRole>;
   /**
    * Validates/narrows a stored `payload` to `TPayload` at the boundary — applied
-   * to the `payload` passed into `issue` and returned by `getByToken`/`accept`.
+   * to the `payload` passed into `issue` and returned by
+   * `accept`/`peek`/`getByToken`/`listPending`/`listByResourceState`.
    * Throws on a mismatch. Omit to leave payloads unvalidated.
    */
   payloadValidator?: Parser<TPayload>;

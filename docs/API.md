@@ -11,6 +11,9 @@
 | `@vllnt/convex-invitations/_generated/component` | type `ComponentApi` (types only)                                                                                                                                                |
 | `@vllnt/convex-invitations/test`                 | `register(t, name = "invitations")` to mount the component in a `convex-test` instance                                                                                          |
 
+`./convex.config.js` and `./_generated/component.js` are aliases of the entries
+above; `./package.json` is also exported.
+
 Construct the client with the mounted component and optional host
 validators/config:
 

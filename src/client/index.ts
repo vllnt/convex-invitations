@@ -320,7 +320,7 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
   /**
    * The current view of one invitation by its `token`, or `null` — a pure
    * reactive read (no write). Reports the stored `state` as-is, so a past-TTL
-   * invite may still read `pending` until a `peek`/`accept`/cron sweep flips it;
+   * invite may still read `pending` until a `peek`/cron sweep flips it;
    * compare `expiresAt` against the clock, or use {@link peek} for read-time TTL.
    */
   async getByToken(

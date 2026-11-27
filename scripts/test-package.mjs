@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 
 // Fails when the npm tarball lacks a file agents and consumers rely on, ships a file
-// that must stay out, or when llms.txt points at something the tarball does not hold.
-// Dist files are not checked here: lint runs before a build, and check-package-contents.sh
-// covers them after one.
+// that must stay out, or when llms.txt or README.md links something the tarball does
+// not hold. Dist files are not checked here: lint runs before a build, and
+// check-package-contents.sh covers them after one.
 
 const REQUIRED = [
   "package.json",
@@ -17,17 +17,22 @@ const REQUIRED = [
 ];
 // Anything else must live under these directories.
 const SHIPPED_DIRECTORY = /^(dist|src)\//;
-const TEST_FILE = /\.(test|spec)\.[^/]+$/;
+const TEST_FILE = /\.(test|spec)\.[^/]+$|(^|\/)__tests__\//;
 const DOCS_DIRECTORY = "node_modules/@vllnt/convex-invitations/docs/";
 const ECOSYSTEM_LINK = "](https://oss.vllnt.com/llms.txt)";
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 const read = (path) => readFileSync(path, "utf8");
 const pkg = JSON.parse(read("package.json"));
+const repository = pkg.repository.url
+  .replace(/^git\+/, "")
+  .replace(/\.git$/, "");
+const githubFile = new RegExp(`^${repository}/(?:blob|tree)/[^/]+/([^?#]+)`);
 
 const [{ files: entries }] = JSON.parse(
   execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+    stdio: ["ignore", "pipe", "inherit"],
   }),
 );
 const packed = new Set(entries.map((entry) => entry.path));
@@ -50,44 +55,41 @@ for (const path of packed) {
   }
 }
 
-const llms = packed.has("llms.txt") ? read("llms.txt") : "";
-for (const [, target] of llms.matchAll(/\]\(([^)]+)\)/g)) {
-  if (target.startsWith("#")) continue;
-  if (/^https?:/.test(target)) {
-    // A GitHub main URL for a shipped file points at the wrong version.
-    const blob = `${pkg.repository.url}/blob/`;
-    if (
-      target.startsWith(blob) &&
-      packed.has(
-        target
-          .slice(blob.length)
-          .replace(/^[^/]+\//, "")
-          .split("#")[0],
-      )
-    ) {
+// Both files ship and are read from node_modules, so a relative link must resolve
+// inside the tarball and a shipped file must not be linked on GitHub (wrong version).
+for (const document of ["llms.txt", "README.md"]) {
+  if (!packed.has(document)) continue;
+  const text = read(document);
+  for (const [, target] of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+    if (target.startsWith("#")) continue;
+    if (SCHEME.test(target)) {
+      const file = githubFile.exec(target)?.[1];
+      if (document === "llms.txt" && file !== undefined && packed.has(file)) {
+        failures.push(
+          `llms.txt links a shipped file by GitHub URL, use a relative link: ${target}`,
+        );
+      }
+      continue;
+    }
+    if (document === "llms.txt" && !target.startsWith("./")) {
+      failures.push(`llms.txt relative links must start with ./: ${target}`);
+    }
+    if (!packed.has(posix.normalize(target.split(/[?#]/)[0]))) {
       failures.push(
-        `llms.txt links a shipped file by GitHub URL, use a relative link: ${target}`,
+        `${document} links a file that is not in the tarball: ${target}`,
       );
     }
-    continue;
   }
-  const path = posix.normalize(target.split("#")[0]);
-  if (!packed.has(path))
+  if (!text.includes(DOCS_DIRECTORY)) {
     failures.push(
-      `llms.txt links a file that is not in the tarball: ${target}`,
+      `${document} does not say where the bundled docs live: ${DOCS_DIRECTORY}`,
     );
+  }
 }
-if (!llms.includes(ECOSYSTEM_LINK))
+if (packed.has("llms.txt") && !read("llms.txt").includes(ECOSYSTEM_LINK))
   failures.push(
     "llms.txt has no Ecosystem link to https://oss.vllnt.com/llms.txt",
   );
-for (const path of ["llms.txt", "README.md"]) {
-  if (packed.has(path) && !read(path).includes(DOCS_DIRECTORY)) {
-    failures.push(
-      `${path} does not say where the bundled docs live: ${DOCS_DIRECTORY}`,
-    );
-  }
-}
 
 if (failures.length > 0) {
   console.error(
@@ -96,5 +98,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(
-  `OK    package contents: ${packed.size} files, required files present, llms.txt links resolve inside the tarball`,
+  `OK    package contents: ${packed.size} files, required files present, llms.txt and README.md links resolve inside the tarball`,
 );

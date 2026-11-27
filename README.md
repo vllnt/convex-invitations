@@ -201,7 +201,8 @@ register(t);
 ## Documentation
 
 [API reference](docs/API.md) · [LLM index](llms.txt) · [Changelog](CHANGELOG.md)
-· [Security policy](SECURITY.md)
+·
+[Security policy](https://github.com/vllnt/convex-invitations/blob/main/SECURITY.md)
 
 ### For coding agents
 
@@ -225,7 +226,8 @@ version. Read them before writing code against this package.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See
+[CONTRIBUTING.md](https://github.com/vllnt/convex-invitations/blob/main/CONTRIBUTING.md).
 
 ## Author
 
