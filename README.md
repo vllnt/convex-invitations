@@ -200,11 +200,28 @@ register(t);
 
 ## Documentation
 
-`llms.txt` is the maintained discovery index. `pnpm generate:llms` checks its
-heading and local links without generating a source bundle.
+[API reference](docs/API.md) · [LLM index](llms.txt) · [Changelog](CHANGELOG.md)
+· [Security policy](SECURITY.md)
 
-[API reference](docs/API.md) · [LLM index](llms.txt) ·
-[Security policy](SECURITY.md)
+### For coding agents
+
+The npm package bundles its docs at
+`node_modules/@vllnt/convex-invitations/docs/`, next to `llms.txt`, `README.md`,
+`CHANGELOG.md` and the TypeScript source in `src/`. They match the installed
+version. Read them before writing code against this package.
+
+## Related packages
+
+- [`@vllnt/convex-memberships`](https://www.npmjs.com/package/@vllnt/convex-memberships)
+  — a membership and relationship graph. Use it to persist the grant `accept`
+  returns; this component holds no membership.
+- [`@vllnt/convex-permissions`](https://www.npmjs.com/package/@vllnt/convex-permissions)
+  — role-based access control. Use it to decide who may issue, accept or revoke
+  an invite.
+- [`@vllnt/convex-tokens`](https://www.npmjs.com/package/@vllnt/convex-tokens) —
+  hashed secret tokens with mint-once, TTL, revoke and scope. Use it for a
+  standalone secret; use this package when the secret is an invitation to a
+  resource that is accepted once.
 
 ## Contributing
 
@@ -215,11 +232,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 Built by [bntvllnt](https://github.com/bntvllnt) ·
 [bntvllnt.com](https://bntvllnt.com) · [X @bntvllnt](https://x.com/bntvllnt)
 
-Part of the [@vllnt](https://github.com/vllnt) Convex component fleet —
-[vllnt.com](https://vllnt.com)
-
 If this is useful, [sponsor the work](https://github.com/sponsors/bntvllnt).
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Part of vllnt oss: https://oss.vllnt.com

@@ -19,12 +19,22 @@ All notable changes to this project are documented here. The format is based on
 - The published tarball no longer includes the test file.
 - `@vllnt/convex-invitations/test` now type-checks under `moduleResolution: nodenext` (explicit `.js`
   relative imports, Vite client types referenced).
+- The `Parser` and `Invitations` doc comments no longer suggest a Convex `v.*` validator's `.parse`,
+  which does not exist; they show a plain `(value: unknown) => T` function.
 
 ### Changed
 
 - Adopt pnpm 10 with a release-age gate; releases are published only from CI with npm trusted
   publishing and provenance. Pin the deepmerge-ts override to 8.0.2.
 - Document the component error codes and how to use `/test` in a consuming app.
+- The npm package now ships `docs/API.md`, `CHANGELOG.md` and `llms.txt`, so the docs under
+  `node_modules/@vllnt/convex-invitations/` match the installed version. `llms.txt` links shipped
+  files relatively. `pnpm test:package` (run by `pnpm lint`) fails when a required file is missing
+  from the tarball.
+- `docs/API.md` lists the package entry points; the README adds a note for coding agents and a
+  related-packages section; `homepage` points at https://oss.vllnt.com/packages/convex-invitations.
+- Canary releases publish on every push to `main` that touches the package or its shipped docs,
+  with no repository-variable gate. Canaries use the `canary` dist-tag only and never move `latest`.
 
 ## [0.1.0] - 2026-09-01
 

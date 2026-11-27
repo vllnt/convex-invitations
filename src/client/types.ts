@@ -6,8 +6,9 @@ export type InvitationState = "pending" | "accepted" | "revoked" | "expired";
 /**
  * Validates and narrows an opaque stored value to a host type `T` at the client
  * boundary. Receives the raw value the component returned (`unknown`) and MUST
- * return a typed `T` or throw. A `convex/values` validator's `.parse` (or a Zod
- * `.parse`) fits directly; omit it to keep the value unvalidated.
+ * return a typed `T` or throw. A Zod schema's `.parse` fits directly; Convex
+ * `v.*` validators have no `.parse`, so wrap a check in a function instead. Omit
+ * it to keep the value unvalidated.
  *
  * @typeParam T - The host's stored type (invitation `role` or `payload`).
  */

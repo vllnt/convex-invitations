@@ -128,6 +128,7 @@ partition.
 | Error codes | `docs/API.md` → `## Error codes` table |
 | `peerDependencies.convex` version | `llms.txt` context line (`convex@^X.Y.Z`), `docs/API.md` Compatibility line, README Installation peer note |
 | Lifecycle / state machine | `docs/API.md` mutation sections, Key design decisions above |
+| Shipped files (`package.json` `files`, `llms.txt` links) | `pnpm test:package` (also run by `pnpm lint`) and the `publish.yml` `paths` filter |
 | Any change | `pnpm generate:llms` to validate the `llms.txt` index (heading and local links) |
 
 Grep old values before committing (e.g. after a `peerDependencies.convex` bump, `git grep "1.41.0"` → only the new range survives).

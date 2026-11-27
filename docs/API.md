@@ -2,6 +2,15 @@
 
 **Compatibility:** `convex@^1.45.0`
 
+## Entry points
+
+| Import                                           | Exports                                                                                                                                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@vllnt/convex-invitations`                      | `Invitations` class; types `InvitationsComponent`, `InvitationsOptions`, `IssueOptions`, `InvitationView`, `InvitationMetadata`, `InvitationGrant`, `InvitationState`, `Parser` |
+| `@vllnt/convex-invitations/convex.config`        | the component definition (default export) for `app.use(...)`                                                                                                                    |
+| `@vllnt/convex-invitations/_generated/component` | type `ComponentApi` (types only)                                                                                                                                                |
+| `@vllnt/convex-invitations/test`                 | `register(t, name = "invitations")` to mount the component in a `convex-test` instance                                                                                          |
+
 Construct the client with the mounted component and optional host
 validators/config:
 
@@ -44,8 +53,10 @@ set — directly, or derived from `ttlMs`.)
 
 **Validation.** When `roleValidator` / `payloadValidator` are set they run at
 the client boundary: over the value written by `issue` (before storage) and over
-the value returned by `getByToken` / `accept` (on read). Each must return the
-typed value or throw. Omit them to leave the opaque data unvalidated.
+the value returned by `accept`, `peek`, `getByToken`, `listPending` and
+`listByResourceState` (on read). Each is a plain function
+`(value: unknown) => T` that returns the typed value or throws; Convex `v.*`
+validators have no `.parse`. Omit them to leave the opaque data unvalidated.
 
 ## Mutations
 
@@ -93,7 +104,7 @@ check still rejects it, and `peek`/the cron persist the sweep.
 
 Cancel a still-`pending` invitation, transitioning it to `revoked` (recording
 `revokedAt`). A revoked invite can never be accepted; a revoke racing an accept
-yields exactly one winner. Rejects a missing id (`NOT_FOUND`) and an
+yields exactly one winner. Rejects a missing token (`NOT_FOUND`) and an
 already-terminal invite (`ALREADY_<STATE>`).
 
 ### `peek(ctx, token) → InvitationView | null`
@@ -135,10 +146,10 @@ automatically; call `prune` directly only for an extra or custom-cadence sweep.
 
 The current view of one invitation by its `token`, or `null` if no such invite
 is held (including an empty or over-long token, so a reactive UI can call it
-with a placeholder). A **pure read** — it reports the stored `state` as-is and does NOT flip
-a stale `pending` invite to `expired` (a query cannot write). Compare
-`expiresAt` against the clock, or call `peek` when you need read-time TTL
-enforcement. `InvitationView` is
+with a placeholder). A **pure read** — it reports the stored `state` as-is and
+does NOT flip a stale `pending` invite to `expired` (a query cannot write).
+Compare `expiresAt` against the clock, or call `peek` when you need read-time
+TTL enforcement. `InvitationView` is
 `{ token, resourceRef, role?, inviterRef?, inviteeRef?, payload?, state, createdAt, expiresAt, acceptedAt?, acceptedBy?, revokedAt? }`;
 `role`/`payload` are narrowed by the host validators when set. The view echoes
 the caller-supplied token; it does not recover a raw token from storage.
@@ -148,9 +159,10 @@ the caller-supplied token; it does not recover a raw token from storage.
 Page the still-`pending` invitations for one `resourceRef`, oldest first via the
 `by_resource_state` index. Takes the standard Convex `paginationOpts` and
 returns the standard paginated envelope (`page`, `isDone`, `continueCursor`)
-with metadata only and no bearer token. Past-TTL invites may still appear
-`pending` here until a `peek`/cron sweep flips them; compare `expiresAt` against
-the clock to hide stale ones in the host UI.
+with metadata only and no bearer token. `InvitationMetadata` is `InvitationView`
+without `token`. Past-TTL invites may still appear `pending` here until a
+`peek`/cron sweep flips them; compare `expiresAt` against the clock to hide
+stale ones in the host UI.
 
 ### `listByResourceState(ctx, resourceRef, state, paginationOpts) → PaginationResult<InvitationMetadata>`
 
@@ -163,15 +175,15 @@ accepted/revoked/expired audit surface. Same metadata-only envelope as
 
 Coded `ConvexError`s thrown by the component (`error.data.code`):
 
-| Code                                                       | Thrown by                                         | Meaning                                                           |
-| ---------------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
-| `INVALID_TOKEN`                                            | `issue`, `accept`, `revoke`, `peek`                | Token length must be 1–512 characters. `getByToken` returns `null` instead. |
-| `INVALID_ARGUMENT`                                         | `issue`, `accept`, `prune`                        | Empty `resourceRef`/`inviterRef`/`inviteeRef`/`acceptedBy`; `expiresAt` not finite or not in the future (so zero/negative/`NaN` `ttlMs`); `NaN` `before`/`retentionBefore`. |
-| `INVALID_BATCH`                                            | `migrateLegacyTokens`, `prune`                    | Batch must be an integer from 1–100 (migration) or 1–500 (prune). |
-| `DUPLICATE_TOKEN`                                          | `issue`                                           | An invitation with this `token` already exists.                   |
-| `NOT_FOUND`                                                | `accept`, `revoke`                                | No invitation has this `token`.                                   |
-| `EXPIRED`                                                  | `accept`                                          | The invitation's TTL (`expiresAt`) has elapsed.                   |
-| `ALREADY_ACCEPTED` / `ALREADY_REVOKED` / `ALREADY_EXPIRED` | `accept`, `revoke`                                | The invitation is already terminal and cannot transition.         |
+| Code                                                       | Thrown by                           | Meaning                                                                                                                                                                     |
+| ---------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INVALID_TOKEN`                                            | `issue`, `accept`, `revoke`, `peek` | Token length must be 1–512 characters. `getByToken` returns `null` instead.                                                                                                 |
+| `INVALID_ARGUMENT`                                         | `issue`, `accept`, `prune`          | Empty `resourceRef`/`inviterRef`/`inviteeRef`/`acceptedBy`; `expiresAt` not finite or not in the future (so zero/negative/`NaN` `ttlMs`); `NaN` `before`/`retentionBefore`. |
+| `INVALID_BATCH`                                            | `migrateLegacyTokens`, `prune`      | Batch must be an integer from 1–100 (migration) or 1–500 (prune).                                                                                                           |
+| `DUPLICATE_TOKEN`                                          | `issue`                             | An invitation with this `token` already exists.                                                                                                                             |
+| `NOT_FOUND`                                                | `accept`, `revoke`                  | No invitation has this `token`.                                                                                                                                             |
+| `EXPIRED`                                                  | `accept`                            | The invitation's TTL (`expiresAt`) has elapsed.                                                                                                                             |
+| `ALREADY_ACCEPTED` / `ALREADY_REVOKED` / `ALREADY_EXPIRED` | `accept`, `revoke`                  | The invitation is already terminal and cannot transition.                                                                                                                   |
 
 ## Cron / Maintenance
 
