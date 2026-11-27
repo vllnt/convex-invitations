@@ -27,7 +27,10 @@ const pkg = JSON.parse(read("package.json"));
 const repository = pkg.repository.url
   .replace(/^git\+/, "")
   .replace(/\.git$/, "");
-const githubFile = new RegExp(`^${repository}/(?:blob|tree)/[^/]+/([^?#]+)`);
+const repositoryPattern = repository.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const githubFile = new RegExp(
+  `^${repositoryPattern}/(?:blob|tree)/[^/]+/([^?#]+)`,
+);
 
 const [{ files: entries }] = JSON.parse(
   execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
@@ -55,6 +58,7 @@ for (const path of packed) {
   }
 }
 
+// Only inline [text](target) links are checked; neither file uses reference links.
 // Both files ship and are read from node_modules, so a relative link must resolve
 // inside the tarball and a shipped file must not be linked on GitHub (wrong version).
 for (const document of ["llms.txt", "README.md"]) {

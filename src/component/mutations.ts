@@ -237,9 +237,9 @@ export const revoke = mutation({
 /**
  * The current view of one invitation by its `token`, or `null` if no such
  * invite is held. Lives in `mutations.ts` (not `queries.ts`) because it flips a
- * `pending` invite found past its TTL to `expired` before returning — the same
- * read-time TTL enforcement `accept` does, so a status check never reports a
- * stale invite as still open.
+ * `pending` invite found past its TTL to `expired` before returning — unlike
+ * `accept`, which rejects a stale invite but cannot persist the flip — so a
+ * status check never reports a stale invite as still open.
  */
 export const peek = mutation({
   args: { token: v.string() },
