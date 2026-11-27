@@ -69,7 +69,7 @@ export const getByToken = query({
  * the `by_resource_state` index. Takes the standard Convex `paginationOpts` and
  * returns the standard paginated envelope (`page`, `isDone`, `continueCursor`)
  * so the host can render an org's open-invite list reactively. Past-TTL invites
- * may still appear `pending` here until a `peek`/`accept`/cron sweep flips them;
+ * may still appear `pending` here until a `peek`/cron sweep flips them;
  * compare `expiresAt` against the clock to hide stale ones in the host UI.
  */
 export const listPending = query({

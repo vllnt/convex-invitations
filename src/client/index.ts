@@ -160,7 +160,10 @@ interface RunMutationCtx {
  * ```ts
  * const invites = new Invitations(components.invitations, {
  *   ttlMs: 1000 * 60 * 60 * 24 * 3, // 3-day links
- *   roleValidator: v.union(v.literal("admin"), v.literal("member")).parse,
+ *   roleValidator: (value) => {
+ *     if (value !== "admin" && value !== "member") throw new Error("Invalid role");
+ *     return value;
+ *   },
  * });
  * const { token } = await invites.issue(ctx, "org_42", { role: "member", inviterRef: me });
  * // ... invitee later redeems the link:
@@ -317,7 +320,7 @@ export class Invitations<TRole = unknown, TPayload = unknown> {
   /**
    * The current view of one invitation by its `token`, or `null` — a pure
    * reactive read (no write). Reports the stored `state` as-is, so a past-TTL
-   * invite may still read `pending` until a `peek`/`accept`/cron sweep flips it;
+   * invite may still read `pending` until a `peek`/cron sweep flips it;
    * compare `expiresAt` against the clock, or use {@link peek} for read-time TTL.
    */
   async getByToken(
