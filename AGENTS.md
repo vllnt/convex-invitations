@@ -8,6 +8,11 @@ override what you may have learned about Convex from training data.
 Convex agent skills for common tasks can be installed by running `npx convex ai-files install`.
 <!-- convex-ai-end -->
 
+That guidelines file is generated and gitignored, so a fresh clone lacks it. Create it with
+`pnpm exec convex ai-files install` (needs network, no Convex login), then delete the `CLAUDE.md`,
+`.claude/skills/` and `.agents/skills/` it also writes, then `.claude/` if it is now empty, and
+`git restore AGENTS.md` (`pnpm check:agents` fails while `CLAUDE.md` or `.claude` exists). If it cannot run, use https://docs.convex.dev/ai and the rules in this file.
+
 # @vllnt/convex-invitations
 
 The invite → accept → expire flow, as a Convex component. A host mutation issues a single-use,
