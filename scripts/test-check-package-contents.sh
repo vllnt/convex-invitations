@@ -87,6 +87,21 @@ commit_tree
 run "packed test file is denied" 1
 grep -q 'DENY  src/index.test.ts' <<< "$LAST_OUTPUT" || { echo "FAIL test path not denied" >&2; failures=$((failures + 1)); }
 
+# Every test and spec flavour is denied
+rm -f "$REPO/src/index.test.ts"
+for kind in test spec; do
+  for ext in ts tsx js mjs cjs mts cts jsx; do
+    printf 'test()\n' > "$REPO/src/index.$kind.$ext"
+  done
+done
+commit_tree
+run "packed test and spec files of every flavour are denied" 1
+for kind in test spec; do
+  for ext in ts tsx js mjs cjs mts cts jsx; do
+    grep -qxF "  DENY  src/index.$kind.$ext" <<< "$LAST_OUTPUT" || { echo "FAIL src/index.$kind.$ext not denied" >&2; failures=$((failures + 1)); }
+  done
+done
+
 # Denylist hit inside dist
 rm -rf "$REPO/src"
 write_pkg '{"name":"fixture-pack","version":"1.0.0","files":["dist"]}'
