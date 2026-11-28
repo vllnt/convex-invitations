@@ -213,16 +213,7 @@ version. Read them before writing code against this package.
 
 ## Related packages
 
-- [`@vllnt/convex-memberships`](https://www.npmjs.com/package/@vllnt/convex-memberships)
-  — a membership and relationship graph. Use it to persist the grant `accept`
-  returns; this component holds no membership.
-- [`@vllnt/convex-permissions`](https://www.npmjs.com/package/@vllnt/convex-permissions)
-  — role-based access control. Use it to decide who may issue, accept or revoke
-  an invite.
-- [`@vllnt/convex-tokens`](https://www.npmjs.com/package/@vllnt/convex-tokens) —
-  hashed secret tokens with mint-once, TTL, revoke and scope. Use it for a
-  standalone secret; use this package when the secret is an invitation to a
-  resource that is accepted once.
+No other `@vllnt` package is used with this one in code.
 
 ## Contributing
 
