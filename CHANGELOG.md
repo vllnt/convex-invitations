@@ -52,6 +52,8 @@ All notable changes to this project are documented here. The format is based on
   `llms.txt` against a docs contract (`scripts/check-documentation.mjs`), type-checks every README
   example against convex 1.45.0 and runs the README test example under Vitest.
 - `pnpm typecheck:tests` also type-checks `src/test.ts` under `moduleResolution: nodenext`.
+- `package.json` `engines.node` is `>=20.0.0`, the oldest Node.js any supported convex version
+  runs on (convex 1.45 to 1.48 need 20, 1.49 and later need 22). It said `>=18`.
 
 ## [0.1.0] - 2026-09-01
 

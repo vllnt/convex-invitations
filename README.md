@@ -104,7 +104,7 @@ export const acceptInvite = mutation({
 ```
 
 Run `npx convex dev` once to generate `components.invitations`. Deliver the
-returned `token` yourself (for example in a `https://your.app/join?token=<token>` link).
+returned `token` yourself (for example in a `https://example.com/join?token=<token>` link).
 The component never reads auth: the host decides who may issue, accept and
 revoke, and applies the returned grant.
 
@@ -347,9 +347,11 @@ the component runs. An error thrown by your `roleValidator` or
 
 - Tokens are 1 to 512 characters (JavaScript string length). The default
   `generateToken` is `crypto.randomUUID()` (36 characters).
-- Only a SHA-256 digest of each token is stored. `issue` returns the raw token
-  once; `peek` and `getByToken` echo the token you pass in, and the list
-  queries return no token at all. Nothing can recover a lost token.
+- New rows store only a SHA-256 digest of the token; older rows keep their raw
+  token until `migrateLegacyTokens` or the daily cron hashes it. `issue`
+  returns the raw token once; `peek` and `getByToken` echo the token you pass
+  in, and the list queries return no token at all. Nothing can recover a lost
+  token.
 - `getByToken`, `listPending` and `listByResourceState` report the stored
   state: an invite past `expiresAt` reads `pending` until `peek` or the daily
   cron stores `expired`. `accept` rejects it with `EXPIRED` but does not store
@@ -400,7 +402,8 @@ the component runs. An error thrown by your `roleValidator` or
 - `@vllnt/convex-invitations/test` needs `convex-test`, `vitest`, `vite` and
   `@edge-runtime/vm`. Add `vite` as a direct dev dependency: the
   `vite/client` types the helper references come from it.
-- React: not applicable. The package is backend-only and has no `./react` entry.
+- React: not applicable. The package is backend-only and has no `./react` entry;
+  use `useQuery` on your own wrappers of `getByToken` or `listPending`.
 
 ## Testing
 

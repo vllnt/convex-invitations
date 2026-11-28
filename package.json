@@ -89,7 +89,7 @@
     "url": "https://github.com/vllnt/convex-invitations"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.0.0"
   },
   "publishConfig": {
     "access": "public"

@@ -1,6 +1,6 @@
 /** Shared constants used by both `client/` and `component/`. */
 
-/** The component name passed to `defineComponent`; the default mount name. */
+/** Equals the name passed to `defineComponent`; the default mount name. */
 export const COMPONENT_NAME = "invitations";
 
 /**
