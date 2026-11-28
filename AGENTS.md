@@ -10,8 +10,8 @@ Convex agent skills for common tasks can be installed by running `npx convex ai-
 
 That guidelines file is generated and gitignored, so a fresh clone lacks it. Create it with
 `pnpm exec convex ai-files install` (needs network, no Convex login), then delete the `CLAUDE.md`,
-`.claude/skills/` and `.agents/skills/` it also writes and `git restore AGENTS.md`
-(`pnpm check:agents` fails otherwise). If it cannot run, use https://docs.convex.dev/ai and the rules in this file.
+`.claude/skills/` and `.agents/skills/` it also writes, then `.claude/` if it is now empty, and
+`git restore AGENTS.md` (`pnpm check:agents` fails while `CLAUDE.md` or `.claude` exists). If it cannot run, use https://docs.convex.dev/ai and the rules in this file.
 
 # @vllnt/convex-invitations
 
