@@ -4,8 +4,8 @@ import { invitationState, jsonValue } from "./validators.js";
 
 /**
  * Sandboxed table — the invitation's own concern. A `tokenHash` is the
- * SHA-256 digest of a component-minted single-use secret; the host hands the raw token
- * it to the invitee (out of band — email, link) and the invitee redeems it via
+ * SHA-256 digest of a client-minted single-use secret; the host hands the raw
+ * token to the invitee (out of band — email, link) and the invitee redeems it via
  * `accept`. `resourceRef` is the opaque host resource the invite grants access
  * to (an org, a team, a workspace); `role`/`payload` are opaque host data
  * carried through to the host on accept. `state` tracks the lifecycle and

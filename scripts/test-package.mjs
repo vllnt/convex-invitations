@@ -1,11 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { posix } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, posix } from "node:path";
+
+import {
+  checkDocumentation,
+  convexHost,
+  writeHost,
+} from "./check-documentation.mjs";
 
 // Fails when the npm tarball lacks a file agents and consumers rely on, ships a file
 // that must stay out, or when llms.txt or README.md links something the tarball does
-// not hold. Dist files are not checked here: lint runs before a build, and
-// check-package-contents.sh covers them after one.
+// not hold. Then it builds, packs and installs the package in a temporary consumer,
+// runs the docs contract (check-documentation.mjs) on what was installed, type-checks
+// every README `ts` example in a stub Convex host, and runs the README test example
+// under Vitest. check-package-contents.sh covers the dist file list after a build.
 
 const REQUIRED = [
   "package.json",
@@ -104,3 +113,104 @@ if (failures.length > 0) {
 console.log(
   `OK    package contents: ${packed.size} files, required files present, llms.txt and README.md links resolve inside the tarball`,
 );
+
+const root = process.cwd();
+const tarball = `${pkg.name.replace("@", "").replace("/", "-")}-${pkg.version}.tgz`;
+const temporary = mkdtempSync(join(tmpdir(), "invitations-consumer-"));
+const run = (command, arguments_, cwd = temporary) =>
+  execFileSync(command, arguments_, { cwd, stdio: "inherit" });
+const typecheck = (moduleKind, types, files) =>
+  run("pnpm", [
+    "exec",
+    "tsc",
+    "--noEmit",
+    "--strict",
+    "--module",
+    moduleKind,
+    "--moduleResolution",
+    moduleKind === "NodeNext" ? "NodeNext" : "Bundler",
+    "--target",
+    "ES2022",
+    "--types",
+    types,
+    ...files,
+  ]);
+try {
+  // Lint runs before a build in CI, so build here: the tarball needs dist/.
+  run("pnpm", ["build"], root);
+  run("pnpm", ["pack", "--pack-destination", temporary], root);
+  writeFileSync(
+    join(temporary, "package.json"),
+    JSON.stringify({
+      pnpm: { ignoredBuiltDependencies: ["esbuild"] },
+      private: true,
+      type: "module",
+    }),
+  );
+  // pnpm 11 reads the build-script policy from the workspace file, pnpm 10 from package.json.
+  writeFileSync(
+    join(temporary, "pnpm-workspace.yaml"),
+    "allowBuilds:\n  esbuild: false\n",
+  );
+  // The lowest supported convex (the peer range floor) and the test helper's peers.
+  run("pnpm", [
+    "add",
+    join(temporary, tarball),
+    "convex@1.45.0",
+    "typescript@5.9.3",
+    "convex-test@0.0.56",
+    "vite@8.2.2",
+    "@types/node@22.20.2",
+    "vitest@5.1.1",
+    "@edge-runtime/vm@5.0.0",
+  ]);
+  // Docs contract on the installed package, then README examples in a stub host.
+  const installed = join(temporary, "node_modules", pkg.name);
+  const examples = checkDocumentation(installed, temporary);
+  const hostFiles = writeHost(
+    temporary,
+    convexHost(installed, examples),
+    examples,
+  );
+  typecheck("ESNext", "vite/client,node", hostFiles);
+  // The README's own vitest.config.mts runs its test example.
+  run("pnpm", ["exec", "vitest", "run"]);
+  writeFileSync(
+    join(temporary, "consumer.ts"),
+    `
+import { Invitations } from "${pkg.name}";
+import type { ComponentApi } from "${pkg.name}/_generated/component.js";
+import config from "${pkg.name}/convex.config.js";
+import { defineApp } from "convex/server";
+declare const component: ComponentApi;
+const client = new Invitations(component);
+const app = defineApp(); app.use(config);
+void client; void app;
+`,
+  );
+  typecheck("NodeNext", "node", ["consumer.ts"]);
+  writeFileSync(
+    join(temporary, "registration.ts"),
+    `
+import { register } from "${pkg.name}/test";
+import { convexTest } from "convex-test";
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+const host = defineSchema({ unrelated: defineTable({ label: v.string() }) });
+register(convexTest(host, {}), "custom");
+`,
+  );
+  typecheck("ESNext", "vite/client,node", ["registration.ts"]);
+  // The shipped test helper is TypeScript source: it must also compile for NodeNext consumers.
+  typecheck("NodeNext", "node", ["registration.ts"]);
+  run("node", [
+    "--input-type=module",
+    "-e",
+    `import { Invitations } from "${pkg.name}"; import config from "${pkg.name}/convex.config.js"; if (!Invitations || !config) throw Error("missing export");`,
+  ]);
+  console.log(
+    "OK    docs contract, README examples and consumer imports pass on the installed tarball",
+  );
+} finally {
+  rmSync(temporary, { force: true, recursive: true });
+}

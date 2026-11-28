@@ -1,36 +1,65 @@
 # @vllnt/convex-invitations
 
-> Invite → accept → expire flow — issue a single-use, expiring invitation to a resource and consume it, as a Convex component
+> TypeScript Convex component for single-use, expiring invitation links: issue, accept once, revoke, expire and prune invites.
 
-`@vllnt/convex-invitations` is a publishable Convex component. It targets `convex@^1.45.0`.
-It stores one sandboxed table - `invitations` (indexed by a SHA-256 digest of a client-minted single-use `token` (legacy raw rows migrate), pointing at an opaque host `resourceRef`, holding a `state` of `pending`/`accepted`/`revoked`/`expired`, opaque host `role`/`payload`, opaque `inviterRef`/`inviteeRef`, an `expiresAt` TTL, and `createdAt`/`acceptedAt`/`acceptedBy`/`revokedAt` server fields). A host mutation calls `issue(resourceRef, { role?, inviterRef?, inviteeRef?, payload?, ttlMs?, expiresAt? })` to record a `pending` invite and gets back the single-use `token` (to deliver out of band) and its `expiresAt`; the invitee redeems it with `accept(token, acceptedBy)`, which consumes the invite (single-use, `pending → accepted`) and returns the grant the host applies; `revoke(token)` cancels a pending invite; clients read `getByToken(token)` or page `listPending(resourceRef, paginationOpts)` / `listByResourceState` (reactively in Convex). Single-use + terminal states are final - accepting/revoking a terminal invite is rejected, so a replayed link never double-grants. TTL is enforced on read - accepting a past-`expiresAt` invite is rejected; a non-throwing `peek` and a daily prune cron sweep stale `pending` invites to `expired` and delete terminal invites past retention, in bounded self-rescheduling batches. Time is read from the server clock inside every handler - no caller-supplied clock. The host owns the resource, auth, delivery, and the `role`/`payload` types (the client is generic over them, with optional `roleValidator`/`payloadValidator` parsers narrowing the opaque stored values at the boundary - never a `v.any()` dump); the component owns only the invitation envelope. Mount-safe: it runs correctly under multiple named `app.use` mounts.
+Install `@vllnt/convex-invitations` (unreleased builds from `main` use the `canary` dist-tag). Peer
+dependency `convex@^1.45.0`; Node.js as convex requires (`>=20.0.0` for convex 1.45 to 1.48,
+`>=22.0.0` for 1.49 and newer). Mount it with `app.use(invitations)` from
+`@vllnt/convex-invitations/convex.config` and call it through `new Invitations(components.invitations)`
+from host mutations and queries. Methods: `issue`, `accept`, `revoke`, `peek`, `getByToken`,
+`listPending`, `listByResourceState`, `migrateLegacyTokens`, `prune`. Lifecycle: `pending` ->
+`accepted` | `revoked` | `expired`; terminal states never change, so a replayed link never grants
+twice. `issue` returns the raw token once and stores only its SHA-256 digest; list queries return no
+token. `accept` returns `{ resourceRef, role?, payload? }` and writes nothing in host tables: apply
+the grant in the same host mutation. `inviteeRef` is not enforced. `getByToken` and the lists report
+the stored state, so a past-TTL invite can read `pending` until `peek` or the daily prune cron stores
+`expired`. Errors are `ConvexError` with `data.code` `INVALID_TOKEN`, `INVALID_ARGUMENT`,
+`INVALID_BATCH`, `DUPLICATE_TOKEN`, `NOT_FOUND`, `EXPIRED`, `ALREADY_ACCEPTED`, `ALREADY_REVOKED` or
+`ALREADY_EXPIRED`. Tokens are 1 to 512 characters. Default TTL 7 days; terminal invites are deleted
+30 days after `createdAt`; `prune` batch 1 to 500 (default 200), `migrateLegacyTokens` batch 1 to 100
+(default 50). The host owns auth, delivery and the meaning of `resourceRef`, `role` and `payload`;
+there is no React entry.
 
-listPending/listByResourceState return PaginationResult<InvitationMetadata> with neither raw token nor digest. getByToken/peek echo the supplied token and cannot recover one. The public client method migrateLegacyTokens(ctx, batch?) hashes/removes legacy tokens in batches of 50 by default, integer 1–100; full batches self-reschedule and a daily cron also runs it. New tokens must be 1–512 characters (INVALID_TOKEN); use unpredictable generators and never log bearer links. inviteeRef is metadata, not enforced recipient binding. issue rejects empty refs and a non-finite or past expiresAt, accept an empty acceptedBy (INVALID_ARGUMENT); getByToken returns null for an empty or over-long token. Prune batch is integer 1–500 (INVALID_BATCH), retention uses createdAt. Host parsers are `(unknown) => T`, not `v.*.parse`.
+## When to use
+
+- Use it when someone joins an org, team or workspace through a link that works once and expires.
+- Use it when an open invite must be revocable and a replayed or concurrent accept must never grant
+  twice.
+- Do not use it when you need sign-in links, password resets or user accounts: use
+  `@convex-dev/auth`.
+- Do not use it when you need the invite email sent: it returns the token and sends nothing; use
+  `@convex-dev/resend` or your own mailer.
 
 ## For coding agents
 
-The npm package bundles these docs at `node_modules/@vllnt/convex-invitations/docs/`, together with
-this file, `README.md`, `CHANGELOG.md` and the TypeScript source in `src/`. They match the installed
-version. Read them before writing code against this package.
+The docs are bundled in the package at `node_modules/@vllnt/convex-invitations/docs/` and match the
+installed version. Read them, and the shipped `src/`, before writing code. The links below to `./`
+paths are files inside the installed package.
 
 ## Docs
 
-- [README](./README.md): Project overview, installation, usage examples, architecture
-- [API Reference](./docs/API.md): Public class methods, return shapes, error codes, cron
+- [README](./README.md): Install, quick start, common tasks, limits
+- [API Reference](./docs/API.md): Every export, signature, default, limit and error code
+- [Errors and fixes](./README.md#errors-and-fixes): Every error code, its cause and the fix
 - [Changelog](./CHANGELOG.md): Version history and release notes
 - [Contributing](https://github.com/vllnt/convex-invitations/blob/main/CONTRIBUTING.md): Development setup, validation commands, release workflow (repository only)
 
 ## Examples
 
 - [Example component wrapper](https://github.com/vllnt/convex-invitations/blob/main/example/convex/example.ts): Host-app wrapper functions (repository only)
-- [Example tests](https://github.com/vllnt/convex-invitations/blob/main/example/convex/example.test.ts): End-to-end usage coverage with `convex-test` (repository only)
-
-## Ecosystem
-
-- [vllnt oss](https://oss.vllnt.com/llms.txt): Index of the other vllnt open-source packages
+- [Example tests](https://github.com/vllnt/convex-invitations/blob/main/example/convex/example.test.ts): Usage coverage with `convex-test` (repository only)
 
 ## Optional
 
 - [Security Policy](https://github.com/vllnt/convex-invitations/blob/main/SECURITY.md): Vulnerability reporting policy
 - [Code of Conduct](https://github.com/vllnt/convex-invitations/blob/main/CODE_OF_CONDUCT.md): Community participation guidelines
 - [License](./LICENSE): MIT license
+
+## Ecosystem
+
+- [Package page](https://oss.vllnt.com/packages/convex-invitations)
+- [Release feed](https://oss.vllnt.com/packages/convex-invitations/rss.xml)
+- [All @vllnt packages](https://oss.vllnt.com/llms.txt)
+- [Search vllnt packages and docs](https://index.vllnt.com)
+- [vllnt](https://vllnt.com/llms.txt)
+- [Author](https://bntvllnt.com)

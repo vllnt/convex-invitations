@@ -1,5 +1,6 @@
 /** Shared constants used by both `client/` and `component/`. */
 
+/** Equals the name passed to `defineComponent`; the default mount name. */
 export const COMPONENT_NAME = "invitations";
 
 /**
@@ -38,9 +39,10 @@ export const DEFAULT_TTL_MS = 604_800_000;
 /**
  * Default retention (ms) for terminal invitations before the prune cron sweeps
  * them: 30 days. Bounds unbounded growth of the `invitations` table while
- * leaving a generous window for the host to audit accepted/revoked invites. A
- * host that wants a different window drives `prune` from its own scheduler with
- * an explicit `before` cutoff.
+ * leaving a window for the host to audit accepted/revoked invites. Age is
+ * counted from `createdAt`. A host that wants a different window calls `prune`
+ * with an explicit `retentionBefore` cutoff; the built-in daily cron keeps
+ * using this default.
  */
 export const DEFAULT_RETENTION_MS = 2_592_000_000;
 

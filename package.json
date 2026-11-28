@@ -1,7 +1,7 @@
 {
   "name": "@vllnt/convex-invitations",
   "version": "0.1.1",
-  "description": "Invite → accept → expire flow — issue a single-use, expiring invitation to a resource and consume it, as a Convex component",
+  "description": "TypeScript Convex component for single-use, expiring invitation links: issue, accept once, revoke, expire and prune invites.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.34.8",
@@ -44,7 +44,7 @@
     "build:clean": "rm -rf dist *.tsbuildinfo && pnpm build:codegen",
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck.tsbuildinfo",
     "typecheck:ci": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck-ci.tsbuildinfo --project tsconfig.ci.json",
-    "typecheck:tests": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck-tests.tsbuildinfo --project tsconfig.test.json",
+    "typecheck:tests": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck-tests.tsbuildinfo --project tsconfig.test.json && tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck-nodenext.tsbuildinfo --project tsconfig.nodenext.json",
     "lint": "pnpm check:agents && pnpm test:package && eslint --cache --cache-location node_modules/.cache/eslint/ .",
     "test": "pnpm typecheck:tests && vitest run --passWithNoTests",
     "test:watch": "vitest --typecheck --clearScreen false",
@@ -89,7 +89,7 @@
     "url": "https://github.com/vllnt/convex-invitations"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.0.0"
   },
   "publishConfig": {
     "access": "public"
@@ -98,11 +98,14 @@
   "keywords": [
     "convex",
     "convex-component",
+    "typescript",
     "invitations",
     "invite",
     "invite-link",
+    "invite-token",
     "single-use-token",
-    "expiring-token"
+    "expiring-token",
+    "team-invitations"
   ],
   "pnpm": {
     "minimumReleaseAge": 10080,

@@ -1,6 +1,7 @@
 # API Reference — @vllnt/convex-invitations
 
-**Compatibility:** `convex@^1.45.0`
+**Compatibility:** `convex@^1.45.0`. Node.js as your convex version requires
+(`>=20.0.0` for convex 1.45 to 1.48, `>=22.0.0` for 1.49 and newer).
 
 ## Entry points
 
@@ -14,20 +15,23 @@
 `./convex.config.js` and `./_generated/component.js` are aliases of the entries
 above; `./package.json` is also exported.
 
-Construct the client with the mounted component and optional host
-validators/config:
+## Client
+
+### `Invitations`
 
 ```ts
+// convex/invites.ts
 import { Invitations } from "@vllnt/convex-invitations";
+
+import { components } from "./_generated/api";
 
 const invites = new Invitations<"admin" | "member", { seats: number }>(
   components.invitations,
   {
-    ttlMs: 1000 * 60 * 60 * 24 * 3, // default link lifetime (ms); defaults to 7 days
+    ttlMs: 3 * 24 * 60 * 60 * 1000, // default link lifetime in ms; defaults to 7 days
     generateToken: () => crypto.randomUUID(), // token minter; this is the default
     roleValidator: (value) => {
-      if (value !== "admin" && value !== "member")
-        throw new Error("Invalid role");
+      if (value !== "admin" && value !== "member") throw new Error("bad role");
       return value;
     },
     payloadValidator: (value) => {
@@ -37,7 +41,7 @@ const invites = new Invitations<"admin" | "member", { seats: number }>(
         !("seats" in value) ||
         typeof value.seats !== "number"
       ) {
-        throw new Error("Expected numeric seats");
+        throw new Error("expected numeric seats");
       }
       return { seats: value.seats };
     },
@@ -45,162 +49,272 @@ const invites = new Invitations<"admin" | "member", { seats: number }>(
 );
 ```
 
-`Invitations<TRole = unknown, TPayload = unknown>` is generic over the host's
-opaque `role` and `payload` types. All methods take the host `ctx` (a query or
-mutation context) as the first argument.
+`new Invitations<TRole = unknown, TPayload = unknown>(component: InvitationsComponent, options?: InvitationsOptions<TRole, TPayload>)`.
+`component` is `components.invitations` (or `components.<name>` for a named
+mount). See [`InvitationsOptions`](#invitationsoptions) for the options.
 
-**Time is server-sourced.** Every handler stamps
-`createdAt`/`acceptedAt`/`revokedAt` from `Date.now()` itself; no method accepts
-a caller-supplied clock. (`expiresAt` is the one absolute timestamp the host may
-set — directly, or derived from `ttlMs`.)
+Every method takes the host `ctx` first. Methods marked mutation need a `ctx`
+with `runMutation` (a mutation or action context); methods marked query need a
+`ctx` with `runQuery` (a query, mutation or action context). Called from an
+action, each method runs in its own transaction.
 
-**Validation.** When `roleValidator` / `payloadValidator` are set they run at
-the client boundary: over the value written by `issue` (before storage) and over
-the value returned by `accept`, `peek`, `getByToken`, `listPending` and
-`listByResourceState` (on read). Each is a plain function
-`(value: unknown) => T` that returns the typed value or throws; Convex `v.*`
-validators have no `.parse`. Omit them to leave the opaque data unvalidated.
+**Time is server-sourced.** The component stamps `createdAt`, `acceptedAt` and
+`revokedAt` with `Date.now()` inside its own handlers. `expiresAt` is the only
+timestamp the host sets, directly or through `ttlMs`.
 
-## Mutations
+**Validation.** `roleValidator` and `payloadValidator` run in the client: on
+the value passed to `issue` (before storage) and on the value returned by
+`accept`, `peek`, `getByToken`, `listPending` and `listByResourceState`. An
+`undefined` value skips the validator. Without a validator the value is passed
+through unchecked.
 
-### `issue(ctx, resourceRef, opts?) → { token, expiresAt }`
+### `issue`
 
-`opts`:
-`{ role?: TRole; inviterRef?: string; inviteeRef?: string; payload?: TPayload; ttlMs?: number; expiresAt?: number }`.
+Mutation.
+`issue(ctx, resourceRef: string, opts?: IssueOptions<TRole, TPayload>): Promise<{ token: string; expiresAt: number }>`
 
-Record a `pending` invitation to the opaque `resourceRef` and return its
-single-use `token` (minted by `generateToken`) plus its absolute `expiresAt`.
-Expiry resolves to `opts.expiresAt` if given, else
-`now + (opts.ttlMs ?? the client default)`. `role`/`payload` are opaque host
-data validated against the host validators before storage;
-`inviterRef`/`inviteeRef` are opaque host subjects (omit `inviteeRef` for an
-open link). `inviteeRef` is not checked against `acceptedBy`: the host must
-enforce recipient binding itself. `createdAt` is stamped from the server clock.
+Creates a `pending` invitation to the opaque `resourceRef` and returns the raw
+single-use `token` (minted by `generateToken`) and the absolute `expiresAt`.
+Expiry is `opts.expiresAt` if set, else `Date.now() + (opts.ttlMs ?? client ttlMs)`;
+the client `ttlMs` defaults to 7 days (`604_800_000` ms). Only the SHA-256
+digest of the token is stored; this is the only time the raw token is returned.
 
-The token must be unique — a collision throws
-`ConvexError({ code: "DUPLICATE_TOKEN" })`. New invitations return the raw
-bearer token once and persist/index only its SHA-256 digest. The bounded
-migration below removes raw tokens from pre-upgrade rows.
+Errors: `INVALID_TOKEN` (generated token empty or longer than 512 characters),
+`INVALID_ARGUMENT` (empty `resourceRef`; `inviterRef` or `inviteeRef` given as
+`""`; `expiresAt` not finite or not after the server time), `DUPLICATE_TOKEN`
+(another invitation already uses this token). A validator error is thrown
+before the component is called.
 
-### `accept(ctx, token, acceptedBy) → InvitationGrant`
+### `accept`
 
-`InvitationGrant` is
-`{ resourceRef: string; role?: TRole; payload?: TPayload }`.
+Mutation.
+`accept(ctx, token: string, acceptedBy: string): Promise<InvitationGrant<TRole, TPayload>>`
 
-Redeem an invitation by its `token` for the opaque `acceptedBy` subject — the
-single-use accept. Atomically transitions the invite to `accepted` (recording
-`acceptedAt` + `acceptedBy`) and returns the grant the host applies (writes a
-membership, grants a role). Two racing accepts yield exactly one winner.
+Consumes a `pending` invitation: sets `state: "accepted"`, `acceptedAt` and the
+opaque `acceptedBy`, and returns the [`InvitationGrant`](#invitationgrant)
+`{ resourceRef, role?, payload? }` for the host to apply. The check and the
+write are one mutation, so two racing accepts have exactly one winner.
+`inviteeRef` is not compared with `acceptedBy`.
 
-**Single-use + terminal states are final.** Accepting a missing, expired, or
-already-terminal invite is rejected — a replayed link can never double-grant. A
-past-`expiresAt` invite is rejected with `EXPIRED` but is **not** flipped to
-`expired` here (a thrown mutation rolls back its own writes); the read-time
-check still rejects it, and `peek`/the cron persist the sweep.
+Checks, in order: token length (`INVALID_TOKEN`), non-empty `acceptedBy`
+(`INVALID_ARGUMENT`), the invitation exists (`NOT_FOUND`), its state is
+`pending` (`ALREADY_ACCEPTED`, `ALREADY_REVOKED` or `ALREADY_EXPIRED`), and
+`expiresAt` is after the server time (`EXPIRED`). An `EXPIRED` invitation stays
+`pending` in storage, because a throwing mutation rolls back its writes; `peek`
+and `prune` store the `expired` state.
 
-- `ConvexError({ code: "NOT_FOUND" })` — no invitation has `token`.
-- `ConvexError({ code: "EXPIRED" })` — the invite's TTL has elapsed.
-- `ConvexError({ code: "ALREADY_ACCEPTED" | "ALREADY_REVOKED" | "ALREADY_EXPIRED" })`
-  — the invite is already terminal.
+### `revoke`
 
-### `revoke(ctx, token) → null`
+Mutation. `revoke(ctx, token: string): Promise<null>`
 
-Cancel a still-`pending` invitation, transitioning it to `revoked` (recording
-`revokedAt`). A revoked invite can never be accepted; a revoke racing an accept
-yields exactly one winner. Rejects a missing token (`NOT_FOUND`) and an
-already-terminal invite (`ALREADY_<STATE>`).
+Sets a `pending` invitation to `revoked` and stamps `revokedAt`. It does not
+check `expiresAt`, so a past-TTL invitation still stored as `pending` is
+revoked. Errors: `INVALID_TOKEN`, `NOT_FOUND`, and `ALREADY_ACCEPTED`,
+`ALREADY_REVOKED` or `ALREADY_EXPIRED` for a terminal invitation. A revoke
+racing an accept has one winner.
 
-### `peek(ctx, token) → InvitationView | null`
+### `peek`
 
-The current view of one invitation **with read-time TTL enforcement**: a
-`pending` invite found past its `expiresAt` is flipped to `expired` and returned
-as such. Runs as a mutation because it may write that one transition. Returns
-`null` for a missing token. Use `getByToken` for a pure reactive read.
+Mutation.
+`peek(ctx, token: string): Promise<InvitationView<TRole, TPayload> | null>`
 
-### `migrateLegacyTokens(ctx, batch?) → number`
+Returns the [`InvitationView`](#invitationview) of one invitation, or `null`
+when no invitation has this token. If the invitation is `pending` and
+`expiresAt` is not after the server time, it stores `state: "expired"` first
+and returns the expired view. Throws `INVALID_TOKEN` for an empty or over-long
+token. The returned `token` is the one you passed in.
 
-Hash and remove raw bearer tokens from up to 50 pre-upgrade rows by default
-(maximum 100). A full batch self-reschedules, and the built-in daily cron drives
-the migration automatically. Direct lookup, accept, revoke, and duplicate
-detection remain compatible while migration is in progress. Use the public
-client method `await invites.migrateLegacyTokens(ctx)` in a trusted host
-mutation. It returns only the first pass's count, not proof that all rows are
-migrated.
+### `getByToken`
 
-### `prune(ctx, opts?) → number`
+Query.
+`getByToken(ctx, token: string): Promise<InvitationView<TRole, TPayload> | null>`
 
-`opts`: `{ before?: number; retentionBefore?: number; batch?: number }`
-(defaults: `before = Date.now()`, `retentionBefore = Date.now() - 30 days`,
-`batch = 200`; batch must be an integer from 1–500).
+Returns the [`InvitationView`](#invitationview) as stored, or `null` when no
+invitation has this token, including for an empty or over-long token (no
+error, so a reactive UI can pass a placeholder). It never writes: a past-TTL
+invitation still reads `pending`. Compare `expiresAt` with the clock, or call
+`peek`. The returned `token` is the one you passed in.
 
-Two bounded passes, oldest first: first delete up to `batch` **terminal**
-invites whose `createdAt < retentionBefore` (the retention sweep, across
-`accepted`/`revoked`/`expired`), then with the remaining budget flip `pending`
-invites whose `expiresAt < before` to `expired` (the TTL sweep). Retention runs
-before TTL so a row flipped this pass is not also deleted this pass (it is
-deleted next pass). Returns the total touched in the first pass. If a full batch
-was touched the sweep self-reschedules through the component scheduler until the
-tail is clean. Idempotent — safe to run anytime. A built-in daily cron drives it
-automatically; call `prune` directly only for an extra or custom-cadence sweep.
+### `listPending`
 
-## Queries
+Query.
+`listPending(ctx, resourceRef: string, paginationOpts: PaginationOptions): Promise<PaginationResult<InvitationMetadata<TRole, TPayload>>>`
 
-### `getByToken(ctx, token) → InvitationView | null`
+One page of the invitations stored as `pending` for `resourceRef`, oldest
+`createdAt` first, as the standard Convex pagination result (`page`, `isDone`,
+`continueCursor`, and `splitCursor`/`pageStatus` when Convex sets them). Rows
+are [`InvitationMetadata`](#invitationmetadata): no token and no digest.
+Past-TTL invitations still appear until `peek` or `prune` stores `expired`.
 
-The current view of one invitation by its `token`, or `null` if no such invite
-is held (including an empty or over-long token, so a reactive UI can call it
-with a placeholder). A **pure read** — it reports the stored `state` as-is and
-does NOT flip a stale `pending` invite to `expired` (a query cannot write).
-Compare `expiresAt` against the clock, or call `peek` when you need read-time
-TTL enforcement. `InvitationView` is
-`{ token, resourceRef, role?, inviterRef?, inviteeRef?, payload?, state, createdAt, expiresAt, acceptedAt?, acceptedBy?, revokedAt? }`;
-`role`/`payload` are narrowed by the host validators when set. The view echoes
-the caller-supplied token; it does not recover a raw token from storage.
+### `listByResourceState`
 
-### `listPending(ctx, resourceRef, paginationOpts) → PaginationResult<InvitationMetadata>`
+Query.
+`listByResourceState(ctx, resourceRef: string, state: InvitationState, paginationOpts: PaginationOptions): Promise<PaginationResult<InvitationMetadata<TRole, TPayload>>>`
 
-Page the still-`pending` invitations for one `resourceRef`, oldest first via the
-`by_resource_state` index. Takes the standard Convex `paginationOpts` and
-returns the standard paginated envelope (`page`, `isDone`, `continueCursor`)
-with metadata only and no bearer token. `InvitationMetadata` is `InvitationView`
-without `token`. Past-TTL invites may still appear `pending` here until a
-`peek`/cron sweep flips them; compare `expiresAt` against the clock to hide
-stale ones in the host UI.
+Same as `listPending` for any stored `state` (`"pending"`, `"accepted"`,
+`"revoked"` or `"expired"`), for history and audit screens. The built-in daily
+cron deletes terminal rows once their `createdAt` is more than 30 days old.
 
-### `listByResourceState(ctx, resourceRef, state, paginationOpts) → PaginationResult<InvitationMetadata>`
+### `migrateLegacyTokens`
 
-Page invitations for one `resourceRef` in a given `state`
-(`"pending" | "accepted" | "revoked" | "expired"`), oldest first — for an
-accepted/revoked/expired audit surface. Same metadata-only envelope as
-`listPending`; bearer tokens are excluded.
+Mutation. `migrateLegacyTokens(ctx, batch?: number): Promise<number>`
+
+Replaces the raw `token` stored on rows written before hashed storage with its
+SHA-256 digest, up to `batch` rows per pass (default 50, integer from 1 to 100,
+else `INVALID_BATCH`). A full batch schedules another pass. Returns the count
+of the first pass only. The built-in daily cron also runs it, and a legacy row
+found by `peek`, or by an `accept` or `revoke` that succeeds, is migrated then. Lookups by token keep
+working during the migration.
+
+### `prune`
+
+Mutation.
+`prune(ctx, opts?: { before?: number; retentionBefore?: number; batch?: number }): Promise<number>`
+
+Defaults: `before = Date.now()`, `retentionBefore = Date.now() - 30 days`,
+`batch = 200`. `batch` must be an integer from 1 to 500 (`INVALID_BATCH`);
+`before` and `retentionBefore` must not be `NaN` (`INVALID_ARGUMENT`) and may
+be `Infinity`.
+
+One pass, oldest first, touches at most `batch` rows:
+
+1. Deletes `accepted`, then `revoked`, then `expired` invitations whose
+   `createdAt < retentionBefore`.
+2. With the remaining budget, sets `pending` invitations whose
+   `expiresAt < before` to `expired`.
+
+Deleting before expiring means a row expired in this pass is deleted in a later
+pass, not twice in one. If the pass touched `batch` rows, it schedules another
+pass with the same cutoffs. Returns the count of the first pass. Calling it does
+not change the built-in cron (see [Cron and maintenance](#cron-and-maintenance)).
+
+## Types
+
+### `InvitationsComponent`
+
+The type of `components.invitations` as the client uses it: the component's
+`mutations` (`issue`, `accept`, `revoke`, `peek`, `migrateLegacyTokens`,
+`prune`) and `queries` (`getByToken`, `listPending`, `listByResourceState`)
+function references, with `role` and `payload` typed `unknown`.
+
+### `InvitationsOptions`
+
+`{ ttlMs?: number; generateToken?: () => string; roleValidator?: Parser<TRole>; payloadValidator?: Parser<TPayload> }`
+
+| Option             | Default               | Meaning                                                                   |
+| ------------------ | --------------------- | ------------------------------------------------------------------------- |
+| `ttlMs`            | `604_800_000` (7 days) | Lifetime of an invite when `issue` gets neither `ttlMs` nor `expiresAt`  |
+| `generateToken`    | `crypto.randomUUID()` | Mints each token; must return 1 to 512 characters, unpredictable, unique |
+| `roleValidator`    | none                  | [`Parser`](#parser) for `role` on write and read                         |
+| `payloadValidator` | none                  | [`Parser`](#parser) for `payload` on write and read                      |
+
+### `IssueOptions`
+
+`{ role?: TRole; inviterRef?: string; inviteeRef?: string; payload?: TPayload; ttlMs?: number; expiresAt?: number }`
+
+`inviterRef` and `inviteeRef` are opaque host subjects; omit `inviteeRef` for an
+open link. `ttlMs` is ignored when `expiresAt` (absolute ms since the epoch) is
+set. `role` and `payload` must be Convex values.
+
+### `InvitationGrant`
+
+`{ resourceRef: string; role?: TRole; payload?: TPayload }`, returned by
+`accept`. The host writes its own membership from it.
+
+### `InvitationView`
+
+`{ token; resourceRef; role?; inviterRef?; inviteeRef?; payload?; state; createdAt; expiresAt; acceptedAt?; acceptedBy?; revokedAt? }`,
+returned by `peek` and `getByToken`. `token` echoes the argument; times are ms
+since the epoch. `acceptedAt`/`acceptedBy` are set once `accepted`, `revokedAt`
+once `revoked`.
+
+### `InvitationMetadata`
+
+`InvitationView` without `token`, the row type of `listPending` and
+`listByResourceState`.
+
+### `InvitationState`
+
+`"pending" | "accepted" | "revoked" | "expired"`. `pending` moves once to one of
+the three terminal states; terminal states never change.
+
+### `Parser`
+
+`type Parser<T> = (value: unknown) => T`. Returns the typed value or throws. A
+Zod schema's `.parse` fits; Convex `v.*` validators have no `.parse`, so wrap a
+check in a function.
+
+## Other entry points
+
+### `convex.config`
+
+```ts
+// convex/convex.config.ts
+import invitations from "@vllnt/convex-invitations/convex.config";
+import { defineApp } from "convex/server";
+
+const app = defineApp();
+app.use(invitations);
+export default app;
+```
+
+The default export is the component definition (`defineComponent("invitations")`).
+`app.use(invitations, { name: "other" })` adds an independent mount with its own
+table and crons, reached as `components.other`.
+
+### `register`
+
+`register<TSchema extends GenericSchema>(t: TestConvex<SchemaDefinition<TSchema, boolean>>, name = "invitations"): void`
+
+From `@vllnt/convex-invitations/test`. Mounts the component in a `convex-test`
+instance built from any host schema, under `name` (the mount name used in
+`app.use`). The helper is shipped as TypeScript source and uses Vite's
+`import.meta.glob`, so run it under Vitest with `convex-test`, `vite` and
+`@edge-runtime/vm` installed.
+
+### `ComponentApi`
+
+From `@vllnt/convex-invitations/_generated/component` (types only). The
+Convex-generated type of the mounted component's functions; it is what
+`components.invitations` has in a host's `convex/_generated/api`.
 
 ## Error codes
 
-Coded `ConvexError`s thrown by the component (`error.data.code`):
+Every component error is `ConvexError` with `data: { code, message }`; read
+`error.data.code`.
 
-| Code                                                       | Thrown by                           | Meaning                                                                                                                                                                     |
-| ---------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INVALID_TOKEN`                                            | `issue`, `accept`, `revoke`, `peek` | Token length must be 1–512 characters. `getByToken` returns `null` instead.                                                                                                 |
-| `INVALID_ARGUMENT`                                         | `issue`, `accept`, `prune`          | Empty `resourceRef`/`inviterRef`/`inviteeRef`/`acceptedBy`; `expiresAt` not finite or not in the future (so zero/negative/`NaN` `ttlMs`); `NaN` `before`/`retentionBefore`. |
-| `INVALID_BATCH`                                            | `migrateLegacyTokens`, `prune`      | Batch must be an integer from 1–100 (migration) or 1–500 (prune).                                                                                                           |
-| `DUPLICATE_TOKEN`                                          | `issue`                             | An invitation with this `token` already exists.                                                                                                                             |
-| `NOT_FOUND`                                                | `accept`, `revoke`                  | No invitation has this `token`.                                                                                                                                             |
-| `EXPIRED`                                                  | `accept`                            | The invitation's TTL (`expiresAt`) has elapsed.                                                                                                                             |
-| `ALREADY_ACCEPTED` / `ALREADY_REVOKED` / `ALREADY_EXPIRED` | `accept`, `revoke`                  | The invitation is already terminal and cannot transition.                                                                                                                   |
+| Code               | Thrown by                           | Meaning                                                                                                                                                             |
+| ------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INVALID_TOKEN`    | `issue`, `accept`, `revoke`, `peek` | Token length is not 1 to 512 characters. `getByToken` returns `null` instead.                                                                                       |
+| `INVALID_ARGUMENT` | `issue`, `accept`, `prune`          | Empty `resourceRef`/`inviterRef`/`inviteeRef`/`acceptedBy`; `expiresAt` not finite or not in the future (so a zero, negative or `NaN` `ttlMs`); `NaN` `before`/`retentionBefore`. |
+| `INVALID_BATCH`    | `migrateLegacyTokens`, `prune`      | `batch` is not an integer from 1 to 100 (migration) or 1 to 500 (prune).                                                                                            |
+| `DUPLICATE_TOKEN`  | `issue`                             | An invitation with this token already exists.                                                                                                                       |
+| `NOT_FOUND`        | `accept`, `revoke`                  | No invitation has this token.                                                                                                                                       |
+| `EXPIRED`          | `accept`                            | The invitation is `pending` but `expiresAt` has passed.                                                                                                             |
+| `ALREADY_ACCEPTED` | `accept`, `revoke`                  | The invitation is already `accepted`.                                                                                                                               |
+| `ALREADY_REVOKED`  | `accept`, `revoke`                  | The invitation is already `revoked`.                                                                                                                                |
+| `ALREADY_EXPIRED`  | `accept`, `revoke`                  | The invitation is already stored as `expired`.                                                                                                                      |
 
-## Cron / Maintenance
+## Cron and maintenance
 
-The component registers two crons (`crons.ts`):
+The component registers two crons per mount (`src/component/crons.ts`):
 
-| Job                                 | Cadence                      | Action                                                                                                                                                               |
-| ----------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invitations:migrate-legacy-tokens` | every 24h (`PRUNE_INTERVAL`) | hashes and removes raw tokens from up to 50 pre-upgrade rows, self-rescheduling until migration is complete                                                          |
-| `invitations:prune`                 | every 24h (`PRUNE_INTERVAL`) | runs `prune` with `batch = PRUNE_BATCH` (200) — expires stale pending invites and deletes terminal invites past retention, self-rescheduling until the tail is clean |
+| Job                                 | Cadence      | Action                                                                     |
+| ----------------------------------- | ------------ | -------------------------------------------------------------------------- |
+| `invitations:migrate-legacy-tokens` | every 24 hours | `migrateLegacyTokens` with the default batch (50), self-rescheduling      |
+| `invitations:prune`                 | every 24 hours | `prune` with batch 200 and the default cutoffs (30-day retention)        |
 
-Cadence is a static module constant (Convex cron definitions are static per
-deployment). A host wanting a different cadence drives `prune` from its own
-scheduler with explicit cutoffs. Extra calls do not change the built-in cron's
-30-day retention; terminal rows are aged from `createdAt`, not their terminal
-transition. The cron is per-mount, so each `app.use(component, { name })`
-instance sweeps its own sandbox independently. Default TTL is 7 days; default
-retention is 30 days.
+Cadence and batch are module constants (`PRUNE_INTERVAL`, `PRUNE_BATCH`) and
+cannot be changed by the host. Extra `prune` calls with other cutoffs run in
+addition to the cron: a shorter retention works, a longer one does not, because
+the cron still deletes terminal invitations 30 days after `createdAt`.
+
+## Storage
+
+One sandboxed table, `invitations`: `tokenHash` (SHA-256 hex digest), `token`
+(raw token, only on rows not yet migrated), `resourceRef`, `role?`,
+`inviterRef?`, `inviteeRef?`, `payload?`, `state`, `createdAt`, `expiresAt`,
+`acceptedAt?`, `acceptedBy?`, `revokedAt?`. Indexes: `by_token_hash`,
+`by_token`, `by_resource_state` (`resourceRef`, `state`, `createdAt`),
+`by_state_expires` and `by_state_created`. The component touches no host
+tables.

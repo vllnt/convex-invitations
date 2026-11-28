@@ -106,7 +106,7 @@ partition.
 - **Backend-only (no `./react` entry):** an invite-management surface is an ordinary reactive
   `useQuery` over the host's own re-exported `getByToken`/`listPending` refs — a dedicated hook would
   wrap the host's `api` with no added value, and the token is delivered by the host, not revealed in a
-  client component. Explicit analysis decision (see README); re-run when a real management-surface
+  client component. Explicit analysis decision; re-run when a real management-surface
   consumer appears.
 
 ## Conventions
@@ -122,14 +122,15 @@ partition.
 
 | Changed | Update in the same commit |
 |---------|--------------------------|
-| Public API (issue/accept/revoke/peek/getByToken/listPending/listByResourceState/prune signatures) | README API Reference table, `docs/API.md`, `llms.txt` context |
-| Config options / defaults (validators, TTL, retention, generateToken, batch) | README API Reference, `docs/API.md` constructor section |
-| Schema / table / indexes | README Architecture, `docs/API.md` |
-| Error codes | `docs/API.md` → `## Error codes` table |
-| `peerDependencies.convex` version | `llms.txt` context line (`convex@^X.Y.Z`), `docs/API.md` Compatibility line, README Installation peer note |
+| Public API (issue/accept/revoke/peek/getByToken/listPending/listByResourceState/prune signatures) | README `## API` table, `docs/API.md`, `llms.txt` context |
+| Config options / defaults (validators, TTL, retention, generateToken, batch) | README `## API` and `## Limits and gotchas`, `docs/API.md` `## Client` section |
+| Schema / table / indexes | `docs/API.md` `## Storage` |
+| Error codes | `docs/API.md` → `## Error codes` table, README `## Errors and fixes` table |
+| `peerDependencies.convex` version | `llms.txt` context line (`convex@^X.Y.Z`), `docs/API.md` Compatibility line, README `## Compatibility` |
 | Lifecycle / state machine | `docs/API.md` mutation sections, Key design decisions above |
 | Shipped files (`package.json` `files`, `llms.txt` links) | `pnpm test:package` (also run by `pnpm lint`) and the `publish.yml` `paths` filter |
 | Any change | `pnpm generate:llms` to validate the `llms.txt` index (heading and local links) |
+| README, `docs/API.md`, `llms.txt`, public exports, error codes | `pnpm test:package`: the docs contract in `scripts/check-documentation.mjs` (sections, API rows, error codes, links) and the README examples, type-checked and run on the packed package |
 
 Grep old values before committing (e.g. after a `peerDependencies.convex` bump, `git grep "1.41.0"` → only the new range survives).
 

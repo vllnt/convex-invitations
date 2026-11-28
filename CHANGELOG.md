@@ -41,6 +41,19 @@ All notable changes to this project are documented here. The format is based on
   https://oss.vllnt.com/packages/convex-invitations.
 - Canary releases publish on every push to `main` that touches the package or its shipped docs,
   with no repository-variable gate. Canaries use the `canary` dist-tag only and never move `latest`.
+- README rewritten for coding agents: when to use it, install, a complete quick start, an API
+  table linked to `docs/API.md`, common tasks, an errors-and-fixes table for every error code,
+  limits and gotchas, and compatibility. `docs/API.md` documents every export and method with its
+  signature, defaults, limits and errors; `llms.txt` carries the same summary and links.
+- `package.json` `description` and `keywords` describe what the package does in search terms.
+- TSDoc summaries on every public export; the `Invitations` class links its package page with
+  `@see`. A doc comment no longer describes delegating tokens or memberships to other packages.
+- `pnpm test:package` packs and installs the package, checks the README, `docs/API.md` and
+  `llms.txt` against a docs contract (`scripts/check-documentation.mjs`), type-checks every README
+  example against convex 1.45.0 and runs the README test example under Vitest.
+- `pnpm typecheck:tests` also type-checks `src/test.ts` under `moduleResolution: nodenext`.
+- `package.json` `engines.node` is `>=20.0.0`, the oldest Node.js any supported convex version
+  runs on (convex 1.45 to 1.48 need 20, 1.49 and later need 22). It said `>=18`.
 
 ## [0.1.0] - 2026-09-01
 
