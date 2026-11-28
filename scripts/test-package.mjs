@@ -180,12 +180,16 @@ try {
     `
 import { Invitations } from "${pkg.name}";
 import type { ComponentApi } from "${pkg.name}/_generated/component.js";
+import type { ComponentApi as BareComponentApi } from "${pkg.name}/_generated/component";
 import config from "${pkg.name}/convex.config.js";
+import bareConfig from "${pkg.name}/convex.config";
 import { defineApp } from "convex/server";
 declare const component: ComponentApi;
+declare const bareComponent: BareComponentApi;
 const client = new Invitations(component);
-const app = defineApp(); app.use(config);
-void client; void app;
+const bareClient = new Invitations(bareComponent);
+const app = defineApp(); app.use(config); app.use(bareConfig, { name: "bare" });
+void client; void bareClient; void app;
 `,
   );
   typecheck("NodeNext", "node", ["consumer.ts"]);
@@ -206,7 +210,7 @@ register(convexTest(host, {}), "custom");
   run("node", [
     "--input-type=module",
     "-e",
-    `import { Invitations } from "${pkg.name}"; import config from "${pkg.name}/convex.config.js"; if (!Invitations || !config) throw Error("missing export");`,
+    `import { Invitations } from "${pkg.name}"; import config from "${pkg.name}/convex.config.js"; import bareConfig from "${pkg.name}/convex.config"; if (!Invitations || !config || !bareConfig) throw Error("missing export");`,
   ]);
   console.log(
     "OK    docs contract, README examples and consumer imports pass on the installed tarball",
