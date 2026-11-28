@@ -4,10 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] - Unreleased
+## [Unreleased]
+
+## [0.1.1] - 2026-11-28
 
 ### Fixed
 
+- `register(t)` from `@vllnt/convex-invitations/test` accepts a `convex-test` instance built from
+  any host schema. It was typed to the component's own schema, so `convexTest(hostSchema, modules)`
+  failed type-checking with TS2345. Runtime behaviour is unchanged.
 - `issue` rejects an `expiresAt` that is `NaN`, infinite or not in the future (so a `NaN`,
   infinite, zero or negative `ttlMs`) with `ConvexError({ code: "INVALID_ARGUMENT" })`. Previously a
   non-finite expiry produced an invitation that never expired.
