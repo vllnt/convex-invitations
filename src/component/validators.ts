@@ -22,11 +22,10 @@ export const invitationState = v.union(
 );
 
 /**
- * Public projection of an invitation returned by {@link getByToken} and
- * {@link listPending}. `resourceRef`, `inviterRef`, `inviteeRef`, `role`, and
+ * Token-free projection of an invitation returned by `listPending` and
+ * `listByResourceState`. `resourceRef`, `inviterRef`, `inviteeRef`, `role`, and
  * `payload` are opaque host data — the component stores and returns them without
- * interpreting them. `token` is the single-use secret the host hands to the
- * invitee; the host gates who may read it.
+ * interpreting them.
  */
 export const invitationMetadataView = v.object({
   resourceRef: v.string(),
@@ -42,6 +41,10 @@ export const invitationMetadataView = v.object({
   revokedAt: v.optional(v.number()),
 });
 
+/**
+ * Projection returned by `getByToken` and `peek`: the metadata plus the `token`
+ * the caller supplied (echoed back, never read from storage).
+ */
 export const invitationView = v.object({
   token: v.string(),
   resourceRef: v.string(),

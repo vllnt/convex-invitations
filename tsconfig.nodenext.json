@@ -1,0 +1,12 @@
+{
+  // Guards the claim that the shipped `/test` source type-checks for consumers
+  // using `moduleResolution: nodenext` (relative imports need `.js`).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true
+  },
+  "include": ["src/test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

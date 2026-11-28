@@ -130,6 +130,7 @@ partition.
 | Lifecycle / state machine | `docs/API.md` mutation sections, Key design decisions above |
 | Shipped files (`package.json` `files`, `llms.txt` links) | `pnpm test:package` (also run by `pnpm lint`) and the `publish.yml` `paths` filter |
 | Any change | `pnpm generate:llms` to validate the `llms.txt` index (heading and local links) |
+| README, `docs/API.md`, `llms.txt`, public exports, error codes | `pnpm test:package`: the docs contract in `scripts/check-documentation.mjs` (sections, API rows, error codes, links) and the README examples, type-checked and run on the packed package |
 
 Grep old values before committing (e.g. after a `peerDependencies.convex` bump, `git grep "1.41.0"` → only the new range survives).
 

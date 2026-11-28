@@ -147,11 +147,8 @@ interface RunMutationCtx {
  * `roleValidator` / `payloadValidator` to narrow that opaque data to
  * `TRole` / `TPayload` at the boundary — there is no unchecked cast.
  *
- * Invitation state is self-contained, but only a SHA-256 token digest is persisted;
- * the raw bearer token is returned once by `issue`. A later version could delegate
- * the hashed/revocable token to
- * `@vllnt/convex-tokens` and write the granted membership via
- * `@vllnt/convex-memberships`, with `accept` composing the two.
+ * Only a SHA-256 digest of each token is stored; `issue` returns the raw bearer
+ * token once, and no method can recover it later.
  *
  * @typeParam TRole - The host's role type to grant on accept (defaults to `unknown`).
  * @typeParam TPayload - The host's opaque invite payload type (defaults to `unknown`).
@@ -170,6 +167,8 @@ interface RunMutationCtx {
  * const grant = await invites.accept(ctx, token, invitee);
  * // host applies grant.resourceRef + grant.role (writes a membership)
  * ```
+ *
+ * @see https://oss.vllnt.com/packages/convex-invitations
  */
 export class Invitations<TRole = unknown, TPayload = unknown> {
   private readonly ttlMs: number;

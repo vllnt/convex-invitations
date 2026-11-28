@@ -1,6 +1,7 @@
 import type { Doc } from "./_generated/dataModel.js";
 import type { MutationCtx, QueryCtx } from "./_generated/server.js";
 
+/** Replace a legacy row's raw `token` with its digest; rows without one are returned unchanged. */
 export async function migrateLegacyToken(
   db: MutationCtx["db"],
   invite: Doc<"invitations">,
@@ -11,6 +12,7 @@ export async function migrateLegacyToken(
   return { ...invite, tokenHash, token: undefined };
 }
 
+/** Return the row found by digest, else look the raw token up among rows not yet migrated. */
 export async function withLegacyTokenFallback(
   db: QueryCtx["db"],
   hashed: Doc<"invitations"> | null,
