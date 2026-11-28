@@ -36,8 +36,9 @@ All notable changes to this project are documented here. The format is based on
   `node_modules/@vllnt/convex-invitations/` match the installed version. `llms.txt` links shipped
   files relatively. `pnpm test:package` (run by `pnpm lint`) fails when a required file is missing
   from the tarball.
-- `docs/API.md` lists the package entry points; the README adds a note for coding agents and a
-  related-packages section; `homepage` points at https://oss.vllnt.com/packages/convex-invitations.
+- `docs/API.md` lists the package entry points; the README adds a note for coding agents and states
+  that no other `@vllnt` package is used with this one in code; `homepage` points at
+  https://oss.vllnt.com/packages/convex-invitations.
 - Canary releases publish on every push to `main` that touches the package or its shipped docs,
   with no repository-variable gate. Canaries use the `canary` dist-tag only and never move `latest`.
 
