@@ -44,6 +44,12 @@ at least one adversarial test (auth-denied, invalid input, boundary).
 - Include tests for new behavior or bug fixes
 - Ensure all checks pass: `pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build`
 
+## Dependency updates
+
+No bot proposes updates. Dependency updates are a manual pass under the 7-day rule: pnpm refuses a
+version published less than 7 days ago (`minimumReleaseAge` in `pnpm-workspace.yaml`; `@vllnt/*`
+is exempt).
+
 ## Releases
 
 Maintainers only. Every publish runs in `.github/workflows/publish.yml` with npm trusted

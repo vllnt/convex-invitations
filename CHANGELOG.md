@@ -29,6 +29,9 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- Internal: CI installs pnpm through Corepack instead of a third-party action, does not cancel runs
+  on `main`, and the Renovate config is removed; dependency updates are a manual pass under the
+  7-day rule.
 - Adopt pnpm 10 with a release-age gate; releases are published only from CI with npm trusted
   publishing and provenance. Pin the deepmerge-ts override to 8.0.2.
 - Document the component error codes and how to use `/test` in a consuming app.
