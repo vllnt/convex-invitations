@@ -326,8 +326,8 @@ describe("invitations — listing (paginated)", () => {
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(accepted.page).toHaveLength(1);
-    expect(accepted.page[0].state).toBe("accepted");
-    expect("token" in accepted.page[0]).toBe(false);
+    expect(accepted.page[0]?.state).toBe("accepted");
+    expect(accepted.page[0] && "token" in accepted.page[0]).toBe(false);
     // an empty state returns a done empty page
     const revoked = await t.query(api.example.listByResourceState, {
       resourceRef: "org_h",

@@ -4,10 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] - Unreleased
+## [Unreleased]
+
+## [0.1.1] - 2026-11-28
 
 ### Fixed
 
+- `register(t)` from `@vllnt/convex-invitations/test` accepts a `convex-test` instance built from
+  any host schema. It was typed to the component's own schema, so `convexTest(hostSchema, modules)`
+  failed type-checking with TS2345. Runtime behaviour is unchanged.
 - `issue` rejects an `expiresAt` that is `NaN`, infinite or not in the future (so a `NaN`,
   infinite, zero or negative `ttlMs`) with `ConvexError({ code: "INVALID_ARGUMENT" })`. Previously a
   non-finite expiry produced an invitation that never expired.
@@ -31,8 +36,9 @@ All notable changes to this project are documented here. The format is based on
   `node_modules/@vllnt/convex-invitations/` match the installed version. `llms.txt` links shipped
   files relatively. `pnpm test:package` (run by `pnpm lint`) fails when a required file is missing
   from the tarball.
-- `docs/API.md` lists the package entry points; the README adds a note for coding agents and a
-  related-packages section; `homepage` points at https://oss.vllnt.com/packages/convex-invitations.
+- `docs/API.md` lists the package entry points; the README adds a note for coding agents and states
+  that no other `@vllnt` package is used with this one in code; `homepage` points at
+  https://oss.vllnt.com/packages/convex-invitations.
 - Canary releases publish on every push to `main` that touches the package or its shipped docs,
   with no repository-variable gate. Canaries use the `canary` dist-tag only and never move `latest`.
 
