@@ -142,6 +142,8 @@ try {
   writeFileSync(
     join(temporary, "package.json"),
     JSON.stringify({
+      // Corepack would otherwise fetch the newest pnpm for this folder; use the repo's pin.
+      packageManager: pkg.packageManager,
       pnpm: { ignoredBuiltDependencies: ["esbuild"] },
       private: true,
       type: "module",
