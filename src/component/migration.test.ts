@@ -102,6 +102,15 @@ test.each(["", "x".repeat(513)])("rejects invalid bearer token length", async (t
   expect(await t.query(api.queries.getByToken, { token })).toBeNull();
 });
 
+test.each(["", "x".repeat(513)])(
+  "getByToken returns null for an invalid-length token even when a legacy row holds it",
+  async (token) => {
+    const t = setup();
+    await seedLegacy(t, token);
+    expect(await t.query(api.queries.getByToken, { token })).toBeNull();
+  },
+);
+
 test.each([Number.NaN, 0, -1, 1.5, 101])(
   "legacy migration rejects invalid batch %s",
   async (batch) => {
